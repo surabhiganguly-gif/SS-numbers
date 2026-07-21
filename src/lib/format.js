@@ -8,6 +8,17 @@ export function formatCurrency(amount) {
   return currencyFormatter.format(amount || 0);
 }
 
+// Compact Indian-style figure for chart labels where the full currency string
+// (e.g. "₹2,26,997") would overflow a thin bar — "₹2.27L", "₹45K", "₹340".
+export function formatCompactINR(amount) {
+  const abs = Math.abs(amount || 0);
+  const sign = amount < 0 ? '-' : '';
+  if (abs >= 1e7) return `${sign}₹${(abs / 1e7).toFixed(2)}Cr`;
+  if (abs >= 1e5) return `${sign}₹${(abs / 1e5).toFixed(2)}L`;
+  if (abs >= 1e3) return `${sign}₹${(abs / 1e3).toFixed(1)}K`;
+  return `${sign}₹${Math.round(abs)}`;
+}
+
 export function monthKey(dateStr) {
   return dateStr.slice(0, 7); // 'YYYY-MM'
 }

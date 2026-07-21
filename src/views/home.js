@@ -49,6 +49,7 @@ export function render(container) {
           : '<div class="hint">No confirmed budget for this month yet — log a Salary transaction to trigger a budget review.</div>'
       }
     </div>
+    <div class="card"><a href="#/budget">Full budget breakdown & spending history →</a></div>
 
     <h2>Setup</h2>
     <div class="card">

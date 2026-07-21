@@ -4,6 +4,7 @@ import { isDevEnvironment } from './crypto/crypto.js';
 
 import * as authView from './views/auth.js';
 import * as homeView from './views/home.js';
+import * as budgetView from './views/budget.js';
 import * as transactionsView from './views/transactions.js';
 import * as fixedCommitmentsView from './views/fixedCommitments.js';
 import * as creditCardView from './views/creditCard.js';
@@ -16,6 +17,7 @@ import * as settingsView from './views/settings.js';
 
 const NAV_ITEMS = [
   { path: '/', icon: '🏠', label: 'Home' },
+  { path: '/budget', icon: '📊', label: 'Budget' },
   { path: '/transactions', icon: '📝', label: 'Log' },
   { path: '/creditcard', icon: '💳', label: 'Card' },
   { path: '/goals', icon: '🎯', label: 'Goals' },
@@ -38,6 +40,7 @@ function guarded(view) {
 
 registerRoute('/auth', authView);
 registerRoute('/', guarded(homeView));
+registerRoute('/budget', guarded(budgetView));
 registerRoute('/transactions', guarded(transactionsView));
 registerRoute('/fixed-commitments', guarded(fixedCommitmentsView));
 registerRoute('/creditcard', guarded(creditCardView));

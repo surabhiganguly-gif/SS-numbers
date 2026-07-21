@@ -7,11 +7,21 @@
   --border: #e2e4e8;
   --primary: #2563eb;
   --primary-text: #ffffff;
-  --danger: #dc2626;
-  --success: #16a34a;
-  --warning: #d97706;
+  --danger: #d03b3b;
+  --success: #0ca30c;
+  --warning: #fab219;
   --radius: 12px;
   --nav-height: 64px;
+
+  /* dataviz tokens — validated palette, see references/palette.md */
+  --chart-surface: #fcfcfb;
+  --chart-grid: #e1e0d9;
+  --chart-axis: #c3c2b7;
+  --chart-muted: #898781;
+  --chart-income: #2a78d6;
+  --chart-expense: #e34948;
+  --chart-savings: #008300;
+  --chart-category: #2a78d6;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -24,6 +34,15 @@
     --border: #2d313b;
     --primary: #3b82f6;
     --primary-text: #ffffff;
+
+    --chart-surface: #1a1a19;
+    --chart-grid: #2c2c2a;
+    --chart-axis: #383835;
+    --chart-muted: #898781;
+    --chart-income: #3987e5;
+    --chart-expense: #e66767;
+    --chart-savings: #008300;
+    --chart-category: #3987e5;
   }
 }
 
@@ -164,3 +183,52 @@ table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--border); }
 
 .empty-state { color: var(--text-muted); text-align: center; padding: 32px 16px; }
+
+.progress-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-alt);
+  overflow: hidden;
+  margin: 6px 0 2px;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.2s ease;
+}
+.progress-fill.good { background: var(--success); }
+.progress-fill.warning { background: var(--warning); }
+.progress-fill.critical { background: var(--danger); }
+.progress-row { margin-bottom: 14px; }
+.progress-row .row { padding: 0; border: none; }
+.progress-label { font-size: 0.8rem; color: var(--text-muted); }
+
+.tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+.tabs button { flex: 1; }
+.tabs button.active { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
+
+.chart-legend {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.chart-legend .swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+.chart-svg { width: 100%; height: auto; display: block; }
+.granularity-badge {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1px 6px;
+  margin-left: 6px;
+}
