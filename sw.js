@@ -1,4 +1,4 @@
-const CACHE_NAME = 'finance-tracker-v2';
+const CACHE_NAME = 'finance-tracker-v3';
 const APP_SHELL = [
   './',
   './index.html',
@@ -46,18 +46,18 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// Network-first for the app shell (HTML/JS/CSS) so a new deployment shows up on
+// the very next reload instead of waiting for the old service worker to cycle
+// out — cache is only the offline fallback, never the primary source when online.
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-          return response;
-        })
-        .catch(() => cached);
-    })
+    fetch(event.request)
+      .then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
