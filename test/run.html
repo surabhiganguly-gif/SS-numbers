@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Budgeting engine tests</title></head>
+<body>
+<pre id="out">Running…</pre>
+<script type="module">
+  const out = document.getElementById('out');
+  const origLog = console.log, origErr = console.error;
+  let buffer = '';
+  console.log = (...args) => { buffer += args.join(' ') + '\n'; origLog(...args); };
+  console.error = (...args) => { buffer += args.join(' ') + '\n'; origErr(...args); };
+  await import('./budgeting.test.mjs');
+  out.textContent = buffer;
+</script>
+</body>
+</html>

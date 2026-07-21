@@ -1,0 +1,58 @@
+const CACHE_NAME = 'finance-tracker-v1';
+const APP_SHELL = [
+  './',
+  './index.html',
+  './manifest.webmanifest',
+  './styles/app.css',
+  './src/app.js',
+  './src/router.js',
+  './src/state/store.js',
+  './src/db/db.js',
+  './src/crypto/crypto.js',
+  './src/lib/format.js',
+  './src/lib/categories.js',
+  './src/lib/budgeting.js',
+  './src/lib/id.js',
+  './src/views/auth.js',
+  './src/views/home.js',
+  './src/views/transactions.js',
+  './src/views/fixedCommitments.js',
+  './src/views/creditCard.js',
+  './src/views/budgetReview.js',
+  './src/views/goals.js',
+  './src/views/staffLedger.js',
+  './src/views/reconciliation.js',
+  './src/views/historicalImport.js',
+  './src/views/settings.js',
+];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting())
+  );
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') return;
+  event.respondWith(
+    caches.match(event.request).then((cached) => {
+      if (cached) return cached;
+      return fetch(event.request)
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          return response;
+        })
+        .catch(() => cached);
+    })
+  );
+});
