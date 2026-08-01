@@ -186,6 +186,17 @@ export function render(container) {
       )
       .join('');
 
+    function showCardError(card, err) {
+      let errEl = card.querySelector('.tx-error');
+      if (!errEl) {
+        errEl = document.createElement('div');
+        errEl.className = 'tx-error pill danger';
+        card.appendChild(errEl);
+      }
+      errEl.textContent = `Error: ${err.message}`;
+      console.error(err);
+    }
+
     listEl.querySelectorAll('.tx-card').forEach((card) => {
       const id = card.dataset.txId;
       const tx = txs.find((t) => t.id === id);
@@ -198,29 +209,42 @@ export function render(container) {
       const saveBtn = card.querySelector('.save-tx');
 
       editBtn.addEventListener('click', () => {
-        categorySelect.value = tx.category;
-        paymentSelect.value = tx.paymentMethod;
-        noteInput.value = tx.note || '';
-        viewEls.forEach((el) => (el.style.display = 'none'));
-        editEl.style.display = 'block';
-        editBtn.style.display = 'none';
-        saveBtn.style.display = 'inline-block';
+        try {
+          if (!tx) throw new Error('Could not find this transaction — try reloading the page.');
+          categorySelect.value = tx.category;
+          paymentSelect.value = tx.paymentMethod;
+          noteInput.value = tx.note || '';
+          viewEls.forEach((el) => (el.style.display = 'none'));
+          editEl.style.display = 'block';
+          editBtn.style.display = 'none';
+          saveBtn.style.display = 'inline-block';
+        } catch (err) {
+          showCardError(card, err);
+        }
       });
 
       saveBtn.addEventListener('click', async () => {
-        const newCategory = categorySelect.value;
-        const newPaymentMethod = paymentSelect.value;
-        const newNote = noteInput.value;
-        const inferred = inferKind(newCategory, newPaymentMethod);
-        const kind = typeof inferred === 'string' ? inferred : inferred.kind;
-        const extra = typeof inferred === 'object' ? { goalId: inferred.goalId } : { goalId: undefined };
-        await updateEntity('transaction', id, { category: newCategory, paymentMethod: newPaymentMethod, note: newNote, kind, ...extra });
-        renderList();
+        try {
+          const newCategory = categorySelect.value;
+          const newPaymentMethod = paymentSelect.value;
+          const newNote = noteInput.value;
+          const inferred = inferKind(newCategory, newPaymentMethod);
+          const kind = typeof inferred === 'string' ? inferred : inferred.kind;
+          const extra = typeof inferred === 'object' ? { goalId: inferred.goalId } : { goalId: undefined };
+          await updateEntity('transaction', id, { category: newCategory, paymentMethod: newPaymentMethod, note: newNote, kind, ...extra });
+          renderList();
+        } catch (err) {
+          showCardError(card, err);
+        }
       });
 
       card.querySelector('.delete-tx').addEventListener('click', async () => {
-        await removeEntity('transaction', id);
-        renderList();
+        try {
+          await removeEntity('transaction', id);
+          renderList();
+        } catch (err) {
+          showCardError(card, err);
+        }
       });
     });
   }
