@@ -156,46 +156,65 @@ export function render(container) {
     listEl.innerHTML = txs
       .map(
         (t) => `
-        <div class="card" data-id="${t.id}">
+        <div class="card tx-card" data-tx-id="${t.id}">
           <div class="row">
             <div>
-              <div class="tx-category-view">${t.category} <span class="pill">${t.paymentMethod}</span></div>
-              <select class="tx-category-edit" style="display:none">${categoryOptionsHtml()}</select>
-              <div class="hint">${t.date}${t.note ? ' · ' + t.note : ''}</div>
+              <div class="tx-view">${t.category} <span class="pill">${t.paymentMethod}</span></div>
+              <div class="hint tx-view">${t.date}${t.note ? ' · ' + t.note : ''}</div>
+              <div class="tx-edit" style="display:none">
+                <label>Category
+                  <select class="tx-edit-category">${categoryOptionsHtml()}</select>
+                </label>
+                <label>Payment method
+                  <select class="tx-edit-payment">
+                    <option value="cash">Cash</option>
+                    <option value="bank">Bank</option>
+                    <option value="creditCard">Credit Card</option>
+                  </select>
+                </label>
+                <label>Note<input type="text" class="tx-edit-note" placeholder="optional" /></label>
+              </div>
             </div>
             <div style="text-align:right">
               <div>${formatCurrency(t.amount)}</div>
-              <button class="edit-tx" data-id="${t.id}">Edit</button>
-              <button class="save-tx" data-id="${t.id}" style="display:none">Save</button>
-              <button class="delete-tx" data-id="${t.id}">Delete</button>
+              <button class="edit-tx">Edit</button>
+              <button class="save-tx" style="display:none">Save</button>
+              <button class="delete-tx">Delete</button>
             </div>
           </div>
         </div>`
       )
       .join('');
 
-    listEl.querySelectorAll('[data-id]').forEach((card) => {
-      const id = card.dataset.id;
+    listEl.querySelectorAll('.tx-card').forEach((card) => {
+      const id = card.dataset.txId;
       const tx = txs.find((t) => t.id === id);
-      const categoryView = card.querySelector('.tx-category-view');
-      const categorySelect = card.querySelector('.tx-category-edit');
+      const viewEls = card.querySelectorAll('.tx-view');
+      const editEl = card.querySelector('.tx-edit');
+      const categorySelect = card.querySelector('.tx-edit-category');
+      const paymentSelect = card.querySelector('.tx-edit-payment');
+      const noteInput = card.querySelector('.tx-edit-note');
       const editBtn = card.querySelector('.edit-tx');
       const saveBtn = card.querySelector('.save-tx');
 
       editBtn.addEventListener('click', () => {
         categorySelect.value = tx.category;
-        categoryView.style.display = 'none';
-        categorySelect.style.display = 'block';
+        paymentSelect.value = tx.paymentMethod;
+        noteInput.value = tx.note || '';
+        viewEls.forEach((el) => (el.style.display = 'none'));
+        editEl.style.display = 'block';
         editBtn.style.display = 'none';
         saveBtn.style.display = 'inline-block';
       });
 
       saveBtn.addEventListener('click', async () => {
         const newCategory = categorySelect.value;
-        const inferred = inferKind(newCategory, tx.paymentMethod);
+        const newPaymentMethod = paymentSelect.value;
+        const newNote = noteInput.value;
+        const inferred = inferKind(newCategory, newPaymentMethod);
         const kind = typeof inferred === 'string' ? inferred : inferred.kind;
         const extra = typeof inferred === 'object' ? { goalId: inferred.goalId } : { goalId: undefined };
-        await updateEntity('transaction', id, { category: newCategory, kind, ...extra });
+        await updateEntity('transaction', id, { category: newCategory, paymentMethod: newPaymentMethod, note: newNote, kind, ...extra });
         renderList();
       });
 
