@@ -2,6 +2,7 @@ import { list } from '../state/store.js';
 import { formatCurrency, currentMonthKey } from '../lib/format.js';
 import { categorySpend, totalIncome, totalSpend, totalSavings, monthGranularity, allMonthKeys, spendByCategory } from '../lib/reports.js';
 import { trendChartHtml, categoryBarChartHtml } from '../lib/charts.js';
+import { reworkBudgetMonth } from '../lib/budgetMonthOps.js';
 
 function statusFor(pct) {
   if (pct >= 100) return 'critical';
@@ -30,15 +31,15 @@ function renderThisMonth(container) {
   const budgetMonth = list('budgetMonth').find((b) => b.monthKey === monthKey && b.confirmed);
 
   if (!budgetMonth) {
-    container.innerHTML = `<div class="empty-state">No confirmed budget for ${monthKey} yet — log a Salary transaction to trigger a budget review.</div>`;
+    container.innerHTML = `<div class="empty-state">No confirmed budget for ${monthKey} yet. Log a Salary transaction to trigger a budget review, or <a href="#/budget-review">revisit the Budget Review screen</a> if you just reworked this month.</div>`;
     return;
   }
 
-  const { squeezeCategoryBudgets, floorCategoryBudgets, vehicleMaintenanceBudgets, goalContributions, liquidSavingsAmount, ccPaymentDue } =
+  const { squeezeCategoryBudgets, floorCategoryBudgets, fixedValueBudgets, stickyFixedBudgets, goalContributions, liquidSavingsAmount, ccPaymentDue } =
     budgetMonth.allocations;
   const goals = list('goal');
 
-  const discretionary = { ...squeezeCategoryBudgets, ...floorCategoryBudgets, ...vehicleMaintenanceBudgets };
+  const discretionary = { ...squeezeCategoryBudgets, ...floorCategoryBudgets, ...fixedValueBudgets };
   const discretionaryRows = Object.entries(discretionary)
     .map(([cat, budget]) => progressRow(cat, categorySpend(transactions, cat, monthKey), budget))
     .join('');
@@ -57,6 +58,10 @@ function renderThisMonth(container) {
     .filter((t) => t.kind === 'savingsContribution' && t.category === 'Liquid Savings' && t.date.slice(0, 7) === monthKey)
     .reduce((s, t) => s + t.amount, 0);
 
+  const sipActual = transactions
+    .filter((t) => t.kind === 'savingsContribution' && t.category === 'SIP Savings' && t.date.slice(0, 7) === monthKey)
+    .reduce((s, t) => s + t.amount, 0);
+
   const ccActual = transactions
     .filter((t) => t.kind === 'ccPayment' && t.date.slice(0, 7) === monthKey)
     .reduce((s, t) => s + t.amount, 0);
@@ -70,12 +75,23 @@ function renderThisMonth(container) {
     <h2>Savings & obligations</h2>
     <div class="card">
       ${progressRow('Liquid Savings', liquidActual, liquidSavingsAmount)}
+      ${progressRow('SIP Savings', sipActual, stickyFixedBudgets?.['SIP Savings'] || 0)}
       ${ccPaymentDue > 0 ? progressRow('Credit Card Payment Due', ccActual, ccPaymentDue) : ''}
     </div>
 
     <h2>Fixed Commitments</h2>
     <div class="card hint">Total: ${formatCurrency(budgetMonth.allocations.fixedCommitmentTotal)}/mo — these are paid in full, not budget caps, so no progress bar.</div>
+
+    <div class="card">
+      <button id="rework-btn" class="danger">Delete & rework this month's budget</button>
+    </div>
   `;
+
+  container.querySelector('#rework-btn').addEventListener('click', async () => {
+    if (!confirm(`Delete the confirmed budget for ${monthKey}? You'll be able to rework it from the Budget Review screen.`)) return;
+    await reworkBudgetMonth(budgetMonth);
+    renderThisMonth(container);
+  });
 }
 
 function renderHistory(container) {

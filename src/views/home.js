@@ -82,8 +82,8 @@ export function render(container) {
 }
 
 function renderQuickCheck(budgetMonth, transactions, monthKey) {
-  const { squeezeCategoryBudgets, floorCategoryBudgets, vehicleMaintenanceBudgets } = budgetMonth.allocations;
-  const allBudgets = { ...squeezeCategoryBudgets, ...floorCategoryBudgets, ...vehicleMaintenanceBudgets };
+  const { squeezeCategoryBudgets, floorCategoryBudgets, fixedValueBudgets } = budgetMonth.allocations;
+  const allBudgets = { ...squeezeCategoryBudgets, ...floorCategoryBudgets, ...fixedValueBudgets };
   return Object.entries(allBudgets)
     .map(([cat, budget]) => {
       const spent = categorySpend(transactions, cat, monthKey);

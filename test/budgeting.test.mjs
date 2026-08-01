@@ -7,7 +7,7 @@ import {
   initialSqueezeState,
   advanceSqueezeState,
   detectSalaryChange,
-  splitShortfall,
+  resolveShortfall,
   computeBudgetProposal,
 } from '../src/lib/budgeting.js';
 
@@ -34,6 +34,12 @@ test('trailingAverage averages over exactly the trailing N months, ignoring the 
   ];
   const avg = trailingAverage(txs, 'Groceries', '2026-07');
   assert.equal(avg, (3000 + 5000 + 4000) / 3);
+});
+
+test('trailingAverage divides by however many tracked months exist, not always 3', () => {
+  const txs = [{ category: 'Utilities', date: '2026-06-10', amount: 6000 }]; // only 1 month on record
+  const avg = trailingAverage(txs, 'Utilities', '2026-07');
+  assert.equal(avg, 6000); // not 6000/3 — there's only ever been one tracked month
 });
 
 test('computeCCPaymentDue sums prior-month lumpsum purchases plus active installments', () => {
@@ -111,17 +117,55 @@ test('detectSalaryChange flags changes beyond 5% either direction', () => {
   assert.equal(decrease.direction, 'decrease');
 });
 
-test('splitShortfall divides proportionally between goal and liquid savings pools', () => {
-  const { goalReduction, liquidReduction } = splitShortfall(3000, 6000, 3000);
-  // pool = 9000, goal share 2/3, liquid share 1/3
-  assert.equal(goalReduction, 2000);
-  assert.equal(liquidReduction, 1000);
+test('resolveShortfall: fits within budget as-is needs no cuts', () => {
+  const r = resolveShortfall({
+    salary: 100000, fixedTotal: 50000, ccPaymentDue: 0,
+    idealGoalTotal: 10000, idealLiquidPct: 0.1, remainingBalance: 50000,
+  });
+  assert.equal(r.stage, 'none');
+  assert.equal(r.liquidAmount, 5000);
+  assert.equal(r.goalScaleFactor, 1);
 });
 
-test('splitShortfall never reduces below zero even if shortfall exceeds the pool', () => {
-  const { goalReduction, liquidReduction } = splitShortfall(100000, 6000, 3000);
-  assert.equal(goalReduction, 6000);
-  assert.equal(liquidReduction, 3000);
+test('resolveShortfall stage 1: trimming Liquid Savings by 5pp is enough', () => {
+  const r = resolveShortfall({
+    salary: 60000, fixedTotal: 50000, ccPaymentDue: 0,
+    idealGoalTotal: 8000, idealLiquidPct: 0.15, remainingBalance: 20000,
+  });
+  assert.equal(r.stage, 'liquid-trimmed');
+  assert.approx(r.liquidPct, 0.1);
+  assert.approx(r.liquidAmount, 2000);
+  assert.equal(r.goalScaleFactor, 1);
+});
+
+test('resolveShortfall stage 2: goals cut by less than the 50% cap when that is enough', () => {
+  const r = resolveShortfall({
+    salary: 60000, fixedTotal: 50000, ccPaymentDue: 0,
+    idealGoalTotal: 10000, idealLiquidPct: 0.15, remainingBalance: 20000,
+  });
+  assert.equal(r.stage, 'goals-cut');
+  assert.approx(r.liquidAmount, 2000);
+  assert.equal(r.goalScaleFactor, 0.8); // 20% cut, well under the 50% cap
+});
+
+test('resolveShortfall stage 3: goals capped at 50% cut, Liquid Savings dropped to zero', () => {
+  const r = resolveShortfall({
+    salary: 55000, fixedTotal: 50000, ccPaymentDue: 0,
+    idealGoalTotal: 10000, idealLiquidPct: 0.15, remainingBalance: 20000,
+  });
+  assert.equal(r.stage, 'liquid-zeroed');
+  assert.equal(r.liquidAmount, 0);
+  assert.equal(r.goalScaleFactor, 0.5); // capped, not cut further in this stage
+});
+
+test('resolveShortfall stage 4: goals reduced beyond 50% once Liquid Savings is already zero', () => {
+  const r = resolveShortfall({
+    salary: 52000, fixedTotal: 50000, ccPaymentDue: 0,
+    idealGoalTotal: 10000, idealLiquidPct: 0.15, remainingBalance: 20000,
+  });
+  assert.equal(r.stage, 'goals-reduced-further');
+  assert.equal(r.liquidAmount, 0);
+  assert.equal(r.goalScaleFactor, 0.2);
 });
 
 function commitment(name, amount) {
@@ -144,8 +188,43 @@ test('computeBudgetProposal: Fixed Commitments and CC Payment Due are protected 
   });
   assert.equal(proposal.fixedCommitmentTotal, 45000);
   assert.equal(proposal.remainingBalance, 5000);
-  assert.ok(proposal.shortfall > 0, 'expected a shortfall given tight remaining balance');
+  assert.ok(proposal.shortfallStage !== 'none', 'expected a shortfall given tight remaining balance');
+  assert.equal(proposal.unresolvedShortfall, 0);
   assert.ok(proposal.goalContributionTotal < 5000, 'goal contribution should have absorbed part of the shortfall');
+});
+
+test('computeBudgetProposal: sticky-fixed categories use the commitment value, trailing-fixed use a running average', () => {
+  const txs = [
+    { category: 'Utilities', date: '2026-05-05', amount: 5000 },
+    { category: 'Utilities', date: '2026-06-05', amount: 7000 },
+    { category: 'Utilities', date: '2026-07-05', amount: 9999 }, // current month excluded
+  ];
+  const proposal = computeBudgetProposal({
+    salaryAmount: 200000,
+    atMonthKey: '2026-07',
+    transactions: txs,
+    commitments: [commitment('Rent', 33880), commitment('SIP Savings', 10000)],
+    ccInstallmentPlans: [],
+    goals: [],
+    squeezeState: initialSqueezeState(),
+  });
+  assert.equal(proposal.stickyFixedBudgets['Rent'], 33880);
+  assert.equal(proposal.stickyFixedBudgets['SIP Savings'], 10000);
+  assert.equal(proposal.trailingFixedBudgets['Utilities'], (5000 + 7000) / 2); // only 2 tracked months
+});
+
+test('computeBudgetProposal: Miscellaneous defaults to its fixed-value commitment, not a trailing average', () => {
+  const txs = [{ category: 'Miscellaneous', date: '2026-06-05', amount: 30000 }]; // one wild month
+  const proposal = computeBudgetProposal({
+    salaryAmount: 200000,
+    atMonthKey: '2026-07',
+    transactions: txs,
+    commitments: [commitment('Miscellaneous', 10000)],
+    ccInstallmentPlans: [],
+    goals: [],
+    squeezeState: initialSqueezeState(),
+  });
+  assert.equal(proposal.fixedValueBudgets['Miscellaneous'], 10000); // unaffected by June's spike
 });
 
 test('computeBudgetProposal clamps liquid savings pct to the 5-15% band', () => {

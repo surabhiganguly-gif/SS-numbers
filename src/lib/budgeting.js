@@ -5,20 +5,31 @@ import { monthKey, addMonths, monthsBetween, trailingMonthKeys, effectiveValue }
 import {
   SQUEEZE_CATEGORIES,
   FLOOR_TRAILING_CATEGORIES,
-  VEHICLE_MAINTENANCE_CATEGORIES,
-  FIXED_COMMITMENT_NAMES,
+  FIXED_VALUE_CATEGORIES,
+  STICKY_FIXED_CATEGORIES,
+  TRAILING_FIXED_CATEGORIES,
 } from './categories.js';
 
 const TRAILING_MONTHS = 3;
 const LIQUID_SAVINGS_MIN_PCT = 0.05;
 const LIQUID_SAVINGS_MAX_PCT = 0.15;
+const LIQUID_CUT_STEP_PCT = 0.05;
+const GOAL_CUT_CAP = 0.5; // shortfall stage 2 never cuts a goal by more than this
 const SALARY_CHANGE_THRESHOLD = 0.05;
 const SQUEEZE_START_PCT = 80;
 const SQUEEZE_EASE_STEP = 5;
 const SQUEEZE_EASE_AFTER_MONTHS = 2;
 
+// Averages only over months actually present in the transaction history (up to
+// `count` months back) — a fixed divide-by-3 would understate the average
+// while there's less than 3 months of data on record.
 export function trailingAverage(transactions, category, atMonthKey, count = TRAILING_MONTHS) {
-  const keys = trailingMonthKeys(atMonthKey, count);
+  if (transactions.length === 0) return 0;
+  const earliestMonthKey = transactions.reduce((min, t) => {
+    const mk = monthKey(t.date);
+    return !min || mk < min ? mk : min;
+  }, null);
+  const keys = trailingMonthKeys(atMonthKey, count).filter((mk) => mk >= earliestMonthKey);
   if (keys.length === 0) return 0;
   const total = keys.reduce((sum, mk) => {
     const monthTotal = transactions
@@ -96,17 +107,48 @@ export function detectSalaryChange(prevSalary, newSalary) {
   return { changed, pctChange, direction: pctChange > 0 ? 'increase' : 'decrease' };
 }
 
-export function splitShortfall(shortfall, goalContributionTotal, liquidSavingsAmount) {
-  const pool = goalContributionTotal + liquidSavingsAmount;
-  if (shortfall <= 0 || pool <= 0) return { goalReduction: 0, liquidReduction: 0 };
-  const goalReduction = Math.min(shortfall * (goalContributionTotal / pool), goalContributionTotal);
-  const liquidReduction = Math.min(shortfall * (liquidSavingsAmount / pool), liquidSavingsAmount);
-  return { goalReduction, liquidReduction };
+// Staged shortfall waterfall: everything except Liquid Savings and Goals is
+// already fixed/protected by this point, so a shortfall is absorbed in order —
+// (1) trim Liquid Savings by 5 percentage points, (2) cut all goals uniformly
+// by up to 50%, (3) drop Liquid Savings to zero, (4) cut goals further (beyond
+// 50%, down to zero if needed) until the month's numbers fit the salary.
+export function resolveShortfall({ salary, fixedTotal, ccPaymentDue, idealGoalTotal, idealLiquidPct, remainingBalance }) {
+  const base = Math.max(0, remainingBalance);
+  const idealLiquidAmount = Math.max(0, idealLiquidPct) * base;
+  const availableForGoalsAndLiquid = salary - fixedTotal - ccPaymentDue;
+
+  if (idealGoalTotal + idealLiquidAmount <= availableForGoalsAndLiquid) {
+    return { liquidPct: idealLiquidPct, liquidAmount: idealLiquidAmount, goalScaleFactor: 1, stage: 'none' };
+  }
+
+  // Stage 1 — trim Liquid Savings by 5 percentage points (floored at the band minimum).
+  const stage1LiquidPct = Math.max(LIQUID_SAVINGS_MIN_PCT, idealLiquidPct - LIQUID_CUT_STEP_PCT);
+  const stage1LiquidAmount = stage1LiquidPct * base;
+  if (idealGoalTotal + stage1LiquidAmount <= availableForGoalsAndLiquid) {
+    return { liquidPct: stage1LiquidPct, liquidAmount: stage1LiquidAmount, goalScaleFactor: 1, stage: 'liquid-trimmed' };
+  }
+
+  // Stage 2 — cut every goal by the same percentage, capped at 50%.
+  const neededForGoals = availableForGoalsAndLiquid - stage1LiquidAmount;
+  const rawScale = idealGoalTotal > 0 ? neededForGoals / idealGoalTotal : 1;
+  const stage2Scale = Math.max(1 - GOAL_CUT_CAP, Math.min(1, rawScale));
+  if (idealGoalTotal * stage2Scale + stage1LiquidAmount <= availableForGoalsAndLiquid + 1e-6) {
+    return { liquidPct: stage1LiquidPct, liquidAmount: stage1LiquidAmount, goalScaleFactor: stage2Scale, stage: 'goals-cut' };
+  }
+
+  // Stage 3 — drop Liquid Savings to zero, goals stay at the 50% cap.
+  if (idealGoalTotal * stage2Scale <= availableForGoalsAndLiquid) {
+    return { liquidPct: 0, liquidAmount: 0, goalScaleFactor: stage2Scale, stage: 'liquid-zeroed' };
+  }
+
+  // Stage 4 — reduce goals further (beyond 50%, down to zero) until it fits.
+  const stage4Scale = idealGoalTotal > 0 ? Math.max(0, availableForGoalsAndLiquid / idealGoalTotal) : 0;
+  return { liquidPct: 0, liquidAmount: 0, goalScaleFactor: stage4Scale, stage: 'goals-reduced-further' };
 }
 
 // `commitments` is a list of { name, versions: [{ amount, effectiveFrom }] } covering
-// both Fixed Monthly Commitments and the two Vehicle Maintenance categories, which
-// share the same effective-dated versioning per Section 3.7.
+// every sticky-fixed category (Rent, EMIs, SIP Savings, Vehicle Maintenance,
+// Miscellaneous) — all share the same effective-dated versioning per Section 3.7.
 export function commitmentValue(commitments, name, atMonthKey) {
   const c = commitments.find((c) => c.name === name);
   return c ? effectiveValue(c.versions, atMonthKey) : 0;
@@ -114,6 +156,10 @@ export function commitmentValue(commitments, name, atMonthKey) {
 
 function sumCommitmentValues(commitments, names, atMonthKey) {
   return names.reduce((sum, name) => sum + commitmentValue(commitments, name, atMonthKey), 0);
+}
+
+function sumTrailingValues(transactions, names, atMonthKey) {
+  return names.reduce((sum, name) => sum + trailingAverage(transactions, name, atMonthKey), 0);
 }
 
 /**
@@ -129,7 +175,16 @@ export function computeBudgetProposal({
   goals, // [{ ...goal, requiredMonthlyContribution }]
   squeezeState,
 }) {
-  const fixedCommitmentTotal = sumCommitmentValues(commitments, FIXED_COMMITMENT_NAMES, atMonthKey);
+  const stickyFixedBudgets = Object.fromEntries(
+    STICKY_FIXED_CATEGORIES.map((cat) => [cat, commitmentValue(commitments, cat, atMonthKey)])
+  );
+  const trailingFixedBudgets = Object.fromEntries(
+    TRAILING_FIXED_CATEGORIES.map((cat) => [cat, trailingAverage(transactions, cat, atMonthKey)])
+  );
+  const fixedCommitmentTotal =
+    sumCommitmentValues(commitments, STICKY_FIXED_CATEGORIES, atMonthKey) +
+    sumTrailingValues(transactions, TRAILING_FIXED_CATEGORIES, atMonthKey);
+
   const ccPaymentDue = computeCCPaymentDue({ transactions, ccInstallmentPlans, atMonthKey });
   const remainingBalance = salaryAmount - fixedCommitmentTotal - ccPaymentDue;
 
@@ -137,10 +192,10 @@ export function computeBudgetProposal({
     (sum, cat) => sum + trailingAverage(transactions, cat, atMonthKey),
     0
   );
-  const vehicleMaintenanceBudgets = Object.fromEntries(
-    VEHICLE_MAINTENANCE_CATEGORIES.map((cat) => [cat, commitmentValue(commitments, cat, atMonthKey)])
+  const fixedValueBudgets = Object.fromEntries(
+    FIXED_VALUE_CATEGORIES.map((cat) => [cat, commitmentValue(commitments, cat, atMonthKey)])
   );
-  const vehicleMaintenanceTotal = Object.values(vehicleMaintenanceBudgets).reduce((a, b) => a + b, 0);
+  const fixedValueTotal = Object.values(fixedValueBudgets).reduce((a, b) => a + b, 0);
   const squeezeFraction = squeezeState.squeezePct / 100;
   const squeezeCategoryBudgets = {};
   let squeezeCategoryTotal = 0;
@@ -150,33 +205,42 @@ export function computeBudgetProposal({
     squeezeCategoryTotal += budget;
   }
 
-  const variableSpendFloor = floorTrailingTotal + vehicleMaintenanceTotal + squeezeCategoryTotal;
+  const variableSpendFloor = floorTrailingTotal + fixedValueTotal + squeezeCategoryTotal;
 
   const goalContributions = goals.map((g) => ({ goalId: g.id, amount: g.requiredMonthlyContribution }));
-  const goalContributionTotal = goalContributions.reduce((s, g) => s + g.amount, 0);
+  const idealGoalTotal = goalContributions.reduce((s, g) => s + g.amount, 0);
 
   const rawLiquidPct =
     remainingBalance > 0
-      ? (remainingBalance - variableSpendFloor - goalContributionTotal) / remainingBalance
+      ? (remainingBalance - variableSpendFloor - idealGoalTotal) / remainingBalance
       : LIQUID_SAVINGS_MIN_PCT;
-  const liquidSavingsPct = Math.min(LIQUID_SAVINGS_MAX_PCT, Math.max(LIQUID_SAVINGS_MIN_PCT, rawLiquidPct));
-  let liquidSavingsAmount = liquidSavingsPct * remainingBalance;
+  const idealLiquidPct = Math.min(LIQUID_SAVINGS_MAX_PCT, Math.max(LIQUID_SAVINGS_MIN_PCT, rawLiquidPct));
 
-  const minLiquidSavings = LIQUID_SAVINGS_MIN_PCT * remainingBalance;
-  const totalNeeded = fixedCommitmentTotal + ccPaymentDue + goalContributionTotal + minLiquidSavings;
-  const shortfall = Math.max(0, totalNeeded - salaryAmount);
+  const resolved = resolveShortfall({
+    salary: salaryAmount,
+    fixedTotal: fixedCommitmentTotal,
+    ccPaymentDue,
+    idealGoalTotal,
+    idealLiquidPct,
+    remainingBalance,
+  });
 
-  let adjustedGoalContributionTotal = goalContributionTotal;
-  if (shortfall > 0) {
-    const { goalReduction, liquidReduction } = splitShortfall(shortfall, goalContributionTotal, liquidSavingsAmount);
-    adjustedGoalContributionTotal = goalContributionTotal - goalReduction;
-    liquidSavingsAmount = Math.max(0, liquidSavingsAmount - liquidReduction);
-  }
+  const finalGoalContributions = goalContributions.map((gc) => ({
+    ...gc,
+    amount: gc.amount * resolved.goalScaleFactor,
+  }));
+  const goalContributionTotal = idealGoalTotal * resolved.goalScaleFactor;
+  const unresolvedShortfall = Math.max(
+    0,
+    fixedCommitmentTotal + ccPaymentDue + goalContributionTotal + resolved.liquidAmount - salaryAmount
+  );
 
   return {
     monthKey: atMonthKey,
     salaryAmount,
     fixedCommitmentTotal,
+    stickyFixedBudgets,
+    trailingFixedBudgets,
     ccPaymentDue,
     remainingBalance,
     variableSpendFloor,
@@ -185,11 +249,12 @@ export function computeBudgetProposal({
     floorCategoryBudgets: Object.fromEntries(
       FLOOR_TRAILING_CATEGORIES.map((cat) => [cat, trailingAverage(transactions, cat, atMonthKey)])
     ),
-    vehicleMaintenanceBudgets,
-    goalContributions,
-    goalContributionTotal: adjustedGoalContributionTotal,
-    liquidSavingsPct,
-    liquidSavingsAmount,
-    shortfall,
+    fixedValueBudgets,
+    goalContributions: finalGoalContributions,
+    goalContributionTotal,
+    liquidSavingsPct: resolved.liquidPct,
+    liquidSavingsAmount: resolved.liquidAmount,
+    shortfallStage: resolved.stage,
+    unresolvedShortfall,
   };
 }

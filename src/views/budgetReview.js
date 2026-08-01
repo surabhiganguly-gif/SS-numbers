@@ -1,6 +1,6 @@
 import { list, addEntity, updateEntity } from '../state/store.js';
 import { formatCurrency, monthKey, currentMonthKey, addMonths } from '../lib/format.js';
-import { FIXED_COMMITMENT_NAMES, VEHICLE_MAINTENANCE_CATEGORIES, SQUEEZE_CATEGORIES } from '../lib/categories.js';
+import { SQUEEZE_CATEGORIES } from '../lib/categories.js';
 import {
   computeBudgetProposal,
   computeRequiredMonthlyContribution,
@@ -9,8 +9,7 @@ import {
   advanceSqueezeState,
   detectSalaryChange,
 } from '../lib/budgeting.js';
-
-const ALL_COMMITMENT_NAMES = [...FIXED_COMMITMENT_NAMES, ...VEHICLE_MAINTENANCE_CATEGORIES];
+import { reworkBudgetMonth } from '../lib/budgetMonthOps.js';
 
 function loadCommitments() {
   const versions = list('fixedCommitmentVersion');
@@ -42,6 +41,14 @@ function salaryTransactionsSorted() {
     .filter((t) => t.category === 'Salary')
     .sort((a, b) => (a.date < b.date ? -1 : 1));
 }
+
+const SHORTFALL_LABELS = {
+  none: '',
+  'liquid-trimmed': 'Liquid Savings was trimmed by 5 percentage points to make this month fit.',
+  'goals-cut': 'Liquid Savings was trimmed and goal contributions were cut to make this month fit.',
+  'liquid-zeroed': 'Liquid Savings dropped to zero and goal contributions were cut by 50% to make this month fit.',
+  'goals-reduced-further': 'Liquid Savings is zero and goal contributions were cut further to make this month fit.',
+};
 
 export function render(container) {
   const salaryTxs = salaryTransactionsSorted();
@@ -77,8 +84,15 @@ export function render(container) {
   if (existingBudgetMonth?.confirmed) {
     container.innerHTML = `
       <h1>Budget Review — ${atMonthKey}</h1>
-      <div class="card">This month's budget is already confirmed.</div>
+      <div class="card">
+        This month's budget is already confirmed.
+        <div class="actions"><button id="rework-btn" class="danger">Delete & rework this month's budget</button></div>
+      </div>
     `;
+    container.querySelector('#rework-btn').addEventListener('click', async () => {
+      await reworkBudgetMonth(existingBudgetMonth);
+      render(container);
+    });
     return;
   }
 
@@ -101,9 +115,23 @@ export function render(container) {
           </div>`
         : ''
     }
+    <h2>Fixed (last month unless updated)</h2>
+    <div class="card">
+      ${Object.entries(proposal.stickyFixedBudgets)
+        .map(([cat, amt]) => `<div class="row"><span>${cat}</span><span>${formatCurrency(amt)}</span></div>`)
+        .join('')}
+    </div>
+
+    <h2>Fixed (3-month average)</h2>
+    <div class="card">
+      ${Object.entries(proposal.trailingFixedBudgets)
+        .map(([cat, amt]) => `<div class="row"><span>${cat}</span><span>${formatCurrency(amt)}</span></div>`)
+        .join('')}
+    </div>
+
     <div class="card">
       <div class="row"><span>Salary</span><span>${formatCurrency(proposal.salaryAmount)}</span></div>
-      <div class="row"><span>Fixed Commitments</span><span>${formatCurrency(proposal.fixedCommitmentTotal)}</span></div>
+      <div class="row"><span>Fixed Commitments total</span><span>${formatCurrency(proposal.fixedCommitmentTotal)}</span></div>
       <div class="row"><span>Credit Card Payment Due</span><span>${formatCurrency(proposal.ccPaymentDue)}</span></div>
       <div class="row"><strong>Remaining balance</strong><strong>${formatCurrency(proposal.remainingBalance)}</strong></div>
     </div>
@@ -115,21 +143,26 @@ export function render(container) {
       ).join('')}
     </div>
 
-    <h2>Other variable categories (trailing average)</h2>
+    <h2>Other variable categories</h2>
     <div class="card">
       ${Object.entries(proposal.floorCategoryBudgets)
-        .map(([cat, amt]) => `<div class="row"><span>${cat}</span><span>${formatCurrency(amt)}</span></div>`)
+        .map(([cat, amt]) => `<div class="row"><span>${cat} <span class="hint">(trailing avg)</span></span><span>${formatCurrency(amt)}</span></div>`)
         .join('')}
-      ${Object.entries(proposal.vehicleMaintenanceBudgets)
-        .map(([cat, amt]) => `<div class="row"><span>${cat}</span><span>${formatCurrency(amt)}</span></div>`)
+      ${Object.entries(proposal.fixedValueBudgets)
+        .map(([cat, amt]) => `<div class="row"><span>${cat} <span class="hint">(fixed)</span></span><span>${formatCurrency(amt)}</span></div>`)
         .join('')}
     </div>
 
     ${
-      proposal.shortfall > 0
-        ? `<div class="card pill warning" style="display:block">Shortfall of ${formatCurrency(
-            proposal.shortfall
-          )} — split between goal contributions and liquid savings below. Edit the amounts if you'd rather split it differently.</div>`
+      proposal.shortfallStage !== 'none'
+        ? `<div class="card pill warning" style="display:block">${SHORTFALL_LABELS[proposal.shortfallStage]}</div>`
+        : ''
+    }
+    ${
+      proposal.unresolvedShortfall > 0
+        ? `<div class="card pill danger" style="display:block">Still short by ${formatCurrency(
+            proposal.unresolvedShortfall
+          )} even with Liquid Savings and goals at zero — fixed commitments alone exceed this month's salary.</div>`
         : ''
     }
 
@@ -168,10 +201,12 @@ export function render(container) {
 
     const allocations = {
       fixedCommitmentTotal: proposal.fixedCommitmentTotal,
+      stickyFixedBudgets: proposal.stickyFixedBudgets,
+      trailingFixedBudgets: proposal.trailingFixedBudgets,
       ccPaymentDue: proposal.ccPaymentDue,
       squeezeCategoryBudgets: proposal.squeezeCategoryBudgets,
       floorCategoryBudgets: proposal.floorCategoryBudgets,
-      vehicleMaintenanceBudgets: proposal.vehicleMaintenanceBudgets,
+      fixedValueBudgets: proposal.fixedValueBudgets,
       goalContributions: finalGoalContributions,
       liquidSavingsAmount: finalLiquidSavings,
     };
@@ -181,11 +216,13 @@ export function render(container) {
         salaryAmount: proposal.salaryAmount,
         allocations,
         squeezePct: nextSqueezeState.squeezePct,
+        squeezeStateBefore: prevSqueezeState,
         confirmed: true,
       });
     } else {
       await addEntity('budgetMonth', {
         monthKey: atMonthKey,
+        squeezeStateBefore: prevSqueezeState,
         salaryAmount: proposal.salaryAmount,
         allocations,
         squeezePct: nextSqueezeState.squeezePct,

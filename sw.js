@@ -1,4 +1,4 @@
-const CACHE_NAME = 'finance-tracker-v3';
+const CACHE_NAME = 'finance-tracker-v4';
 const APP_SHELL = [
   './',
   './index.html',
@@ -12,6 +12,7 @@ const APP_SHELL = [
   './src/lib/format.js',
   './src/lib/categories.js',
   './src/lib/budgeting.js',
+  './src/lib/budgetMonthOps.js',
   './src/lib/id.js',
   './src/lib/bankBalance.js',
   './src/lib/creditCard.js',

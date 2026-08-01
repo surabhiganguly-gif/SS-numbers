@@ -11,3 +11,9 @@ export function ok(value, message) {
     throw new Error(message || `Expected truthy value, got ${value}`);
   }
 }
+
+export function approx(actual, expected, epsilon = 1e-6, message) {
+  if (Math.abs(actual - expected) > epsilon) {
+    throw new Error(message || `Expected ~${expected} but got ${actual}`);
+  }
+}

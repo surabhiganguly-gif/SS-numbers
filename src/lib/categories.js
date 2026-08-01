@@ -50,12 +50,7 @@ export const CATEGORY_GROUPS = {
 export const SQUEEZE_CATEGORIES = ['Groceries', 'Outside Food', 'Shopping', 'Alcohol'];
 
 // Non-target variable categories that feed the variable-spend floor at plain trailing average.
-export const FLOOR_TRAILING_CATEGORIES = [
-  'Fuel',
-  'Travel',
-  'Untracked Cash Withdrawals',
-  'Miscellaneous',
-];
+export const FLOOR_TRAILING_CATEGORIES = ['Fuel', 'Travel', 'Untracked Cash Withdrawals'];
 
 // Vehicle maintenance categories use a fixed user-set value, not a trailing average.
 export const VEHICLE_MAINTENANCE_CATEGORIES = [
@@ -63,15 +58,27 @@ export const VEHICLE_MAINTENANCE_CATEGORIES = [
   'Vehicle Maintenance (Jimny)',
 ];
 
-export const FIXED_COMMITMENT_NAMES = [
-  'Rent',
-  'Utilities',
-  'Vehicle EMI (Virtus)',
-  'Vehicle EMI (Jimny)',
-  'Hobbies',
-  'Staff/Ironing',
-  'Land',
-];
+// Variable-taxonomy categories budgeted as a fixed, user-editable value (sticky,
+// carried forward until changed) rather than a trailing average or a squeeze.
+export const FIXED_VALUE_DEFAULTS = {
+  'Vehicle Maintenance (Virtus)': 2000,
+  'Vehicle Maintenance (Jimny)': 2000,
+  Miscellaneous: 10000,
+};
+export const FIXED_VALUE_CATEGORIES = Object.keys(FIXED_VALUE_DEFAULTS);
+
+// "Fixed" commitments split into two budgeting treatments:
+// - sticky: carries forward last month's value unchanged until the user updates
+//   it (via Fixed Commitments), same mechanism as Vehicle Maintenance's default.
+// - trailing: genuinely varies month to month, so it's budgeted off a running
+//   3-month average (or fewer months early on) instead of a manually-set value.
+export const STICKY_FIXED_CATEGORIES = ['Rent', 'Vehicle EMI (Virtus)', 'Vehicle EMI (Jimny)', 'SIP Savings'];
+
+export const TRAILING_FIXED_CATEGORIES = ['Utilities', 'Hobbies', 'Staff/Ironing', 'Land'];
+
+// All categories reported under the "Fixed Monthly Commitments" taxonomy group,
+// regardless of which budgeting treatment they get.
+export const FIXED_COMMITMENT_NAMES = ['Rent', 'Vehicle EMI (Virtus)', 'Vehicle EMI (Jimny)', ...TRAILING_FIXED_CATEGORIES];
 
 export function allCategories(extraGoalNames = []) {
   const groups = { ...CATEGORY_GROUPS, goal: { ...CATEGORY_GROUPS.goal, categories: extraGoalNames } };
