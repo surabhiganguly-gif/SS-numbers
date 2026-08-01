@@ -7,14 +7,17 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function categoryOptionsHtml() {
+function categoryGroups() {
   const goals = list('goal');
   const { ccPaymentDue, ...rest } = CATEGORY_GROUPS;
-  const groups = {
+  return {
     ...rest,
     goal: { label: 'Goal-Based Savings', categories: goals.map((g) => g.name) },
   };
-  return Object.values(groups)
+}
+
+function categoryOptionsHtml() {
+  return Object.values(categoryGroups())
     .filter((g) => g.categories.length > 0)
     .map(
       (g) => `<optgroup label="${g.label}">${g.categories
@@ -62,7 +65,14 @@ export function render(container) {
       <label>Note<input type="text" name="note" placeholder="optional" /></label>
       <div class="actions"><button type="submit" class="primary">Add transaction</button></div>
     </form>
+
     <h2>Recent</h2>
+    <label>Filter by category
+      <select id="category-filter">
+        <option value="">All categories</option>
+        ${categoryOptionsHtml()}
+      </select>
+    </label>
     <div id="tx-list"></div>
   `;
 
@@ -71,6 +81,7 @@ export function render(container) {
   const ccPlanFields = form.querySelector('#cc-plan-fields');
   const ccPlanSelect = form.querySelector('[name=ccPlanType]');
   const installmentFields = form.querySelector('#installment-fields');
+  const categoryFilter = container.querySelector('#category-filter');
 
   paymentSelect.addEventListener('change', () => {
     ccPlanFields.style.display = paymentSelect.value === 'creditCard' ? 'block' : 'none';
@@ -78,6 +89,7 @@ export function render(container) {
   ccPlanSelect.addEventListener('change', () => {
     installmentFields.style.display = ccPlanSelect.value === 'installment' ? 'block' : 'none';
   });
+  categoryFilter.addEventListener('change', () => renderList());
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -131,7 +143,11 @@ export function render(container) {
   });
 
   function renderList() {
-    const txs = [...list('transaction')].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 30);
+    const filterCategory = categoryFilter.value;
+    const txs = [...list('transaction')]
+      .filter((t) => !filterCategory || t.category === filterCategory)
+      .sort((a, b) => (a.date < b.date ? 1 : -1))
+      .slice(0, 30);
     const listEl = container.querySelector('#tx-list');
     if (txs.length === 0) {
       listEl.innerHTML = '<div class="empty-state">No transactions yet.</div>';
@@ -140,21 +156,51 @@ export function render(container) {
     listEl.innerHTML = txs
       .map(
         (t) => `
-        <div class="card row" data-id="${t.id}">
-          <div>
-            <div>${t.category} <span class="pill">${t.paymentMethod}</span></div>
-            <div class="hint">${t.date}${t.note ? ' · ' + t.note : ''}</div>
-          </div>
-          <div style="text-align:right">
-            <div>${formatCurrency(t.amount)}</div>
-            <button class="delete-tx" data-id="${t.id}">Delete</button>
+        <div class="card" data-id="${t.id}">
+          <div class="row">
+            <div>
+              <div class="tx-category-view">${t.category} <span class="pill">${t.paymentMethod}</span></div>
+              <select class="tx-category-edit" style="display:none">${categoryOptionsHtml()}</select>
+              <div class="hint">${t.date}${t.note ? ' · ' + t.note : ''}</div>
+            </div>
+            <div style="text-align:right">
+              <div>${formatCurrency(t.amount)}</div>
+              <button class="edit-tx" data-id="${t.id}">Edit</button>
+              <button class="save-tx" data-id="${t.id}" style="display:none">Save</button>
+              <button class="delete-tx" data-id="${t.id}">Delete</button>
+            </div>
           </div>
         </div>`
       )
       .join('');
-    listEl.querySelectorAll('.delete-tx').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        await removeEntity('transaction', btn.dataset.id);
+
+    listEl.querySelectorAll('[data-id]').forEach((card) => {
+      const id = card.dataset.id;
+      const tx = txs.find((t) => t.id === id);
+      const categoryView = card.querySelector('.tx-category-view');
+      const categorySelect = card.querySelector('.tx-category-edit');
+      const editBtn = card.querySelector('.edit-tx');
+      const saveBtn = card.querySelector('.save-tx');
+
+      editBtn.addEventListener('click', () => {
+        categorySelect.value = tx.category;
+        categoryView.style.display = 'none';
+        categorySelect.style.display = 'block';
+        editBtn.style.display = 'none';
+        saveBtn.style.display = 'inline-block';
+      });
+
+      saveBtn.addEventListener('click', async () => {
+        const newCategory = categorySelect.value;
+        const inferred = inferKind(newCategory, tx.paymentMethod);
+        const kind = typeof inferred === 'string' ? inferred : inferred.kind;
+        const extra = typeof inferred === 'object' ? { goalId: inferred.goalId } : { goalId: undefined };
+        await updateEntity('transaction', id, { category: newCategory, kind, ...extra });
+        renderList();
+      });
+
+      card.querySelector('.delete-tx').addEventListener('click', async () => {
+        await removeEntity('transaction', id);
         renderList();
       });
     });

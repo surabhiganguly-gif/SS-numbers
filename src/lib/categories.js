@@ -28,8 +28,7 @@ export const CATEGORY_GROUPS = {
       'Travel',
       'Untracked Cash Withdrawals',
       'Miscellaneous',
-      'Vehicle Maintenance (Virtus)',
-      'Vehicle Maintenance (Jimny)',
+      'Vehicle Maintenance',
     ],
   },
   savings: {
@@ -52,17 +51,15 @@ export const SQUEEZE_CATEGORIES = ['Groceries', 'Outside Food', 'Shopping', 'Alc
 // Non-target variable categories that feed the variable-spend floor at plain trailing average.
 export const FLOOR_TRAILING_CATEGORIES = ['Fuel', 'Travel', 'Untracked Cash Withdrawals'];
 
-// Vehicle maintenance categories use a fixed user-set value, not a trailing average.
-export const VEHICLE_MAINTENANCE_CATEGORIES = [
-  'Vehicle Maintenance (Virtus)',
-  'Vehicle Maintenance (Jimny)',
-];
+// Historical category names merged into the single "Vehicle Maintenance"
+// category — kept around only so the one-time migration (store.js) knows what
+// to fold in.
+export const LEGACY_VEHICLE_MAINTENANCE_CATEGORIES = ['Vehicle Maintenance (Virtus)', 'Vehicle Maintenance (Jimny)'];
 
 // Variable-taxonomy categories budgeted as a fixed, user-editable value (sticky,
 // carried forward until changed) rather than a trailing average or a squeeze.
 export const FIXED_VALUE_DEFAULTS = {
-  'Vehicle Maintenance (Virtus)': 2000,
-  'Vehicle Maintenance (Jimny)': 2000,
+  'Vehicle Maintenance': 4000,
   Miscellaneous: 10000,
 };
 export const FIXED_VALUE_CATEGORIES = Object.keys(FIXED_VALUE_DEFAULTS);

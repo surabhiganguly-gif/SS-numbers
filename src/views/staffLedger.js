@@ -84,15 +84,17 @@ export function render(container) {
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const staffId = form.closest('[data-staff-id]').dataset.staffId;
+        const staffName = staff.find((s) => s.id === staffId)?.name || '';
         const fd = new FormData(form);
         const amount = Number(fd.get('amount'));
+        const customNote = fd.get('note');
         await addEntity('staffAdvance', { staffId, amount, appliedAmount: 0, date: todayStr() });
         await addEntity('transaction', {
           date: todayStr(),
           amount,
           category: 'Staff/Ironing',
-          note: fd.get('note') || 'Advance',
-          paymentMethod: 'cash',
+          note: customNote ? `Advance to ${staffName} — ${customNote}` : `Advance to ${staffName}`,
+          paymentMethod: 'bank',
           kind: 'staffAdvance',
           staffId,
         });
@@ -104,6 +106,7 @@ export function render(container) {
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const staffId = form.closest('[data-staff-id]').dataset.staffId;
+        const staffName = staff.find((s) => s.id === staffId)?.name || '';
         const fd = new FormData(form);
         const amount = Number(fd.get('amount'));
         const outstanding = outstandingTotal(staffId);
@@ -114,12 +117,17 @@ export function render(container) {
           await applyAgainstAdvances(staffId, appliedAdvanceAmount);
         }
 
+        const note =
+          appliedAdvanceAmount > 0
+            ? `Payment to ${staffName} — applied ${formatCurrency(appliedAdvanceAmount)} advance`
+            : `Payment to ${staffName}`;
+
         await addEntity('transaction', {
           date: todayStr(),
           amount,
           category: 'Staff/Ironing',
-          note: appliedAdvanceAmount > 0 ? `Applied ${formatCurrency(appliedAdvanceAmount)} advance` : '',
-          paymentMethod: 'cash',
+          note,
+          paymentMethod: 'bank',
           kind: 'staffPayment',
           staffId,
           appliedAdvanceAmount,

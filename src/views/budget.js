@@ -3,6 +3,7 @@ import { formatCurrency, currentMonthKey } from '../lib/format.js';
 import { categorySpend, totalIncome, totalSpend, totalSavings, monthGranularity, allMonthKeys, spendByCategory } from '../lib/reports.js';
 import { trendChartHtml, categoryBarChartHtml } from '../lib/charts.js';
 import { reworkBudgetMonth } from '../lib/budgetMonthOps.js';
+import { openingBalance, closingBalance } from '../lib/bankBalance.js';
 
 function statusFor(pct) {
   if (pct >= 100) return 'critical';
@@ -35,9 +36,20 @@ function renderThisMonth(container) {
     return;
   }
 
-  const { squeezeCategoryBudgets, floorCategoryBudgets, fixedValueBudgets, stickyFixedBudgets, goalContributions, liquidSavingsAmount, ccPaymentDue } =
-    budgetMonth.allocations;
+  const {
+    squeezeCategoryBudgets,
+    floorCategoryBudgets,
+    fixedValueBudgets,
+    stickyFixedBudgets,
+    trailingFixedBudgets,
+    goalContributions,
+    liquidSavingsAmount,
+    ccPaymentDue,
+  } = budgetMonth.allocations;
   const goals = list('goal');
+  const reconciliations = list('reconciliation');
+  const opening = openingBalance(transactions, reconciliations, monthKey);
+  const closing = closingBalance(transactions, reconciliations, monthKey);
 
   const discretionary = { ...squeezeCategoryBudgets, ...floorCategoryBudgets, ...fixedValueBudgets };
   const discretionaryRows = Object.entries(discretionary)
@@ -66,7 +78,20 @@ function renderThisMonth(container) {
     .filter((t) => t.kind === 'ccPayment' && t.date.slice(0, 7) === monthKey)
     .reduce((s, t) => s + t.amount, 0);
 
+  const fixedPaymentRows = [
+    ...Object.entries(stickyFixedBudgets || {}).filter(([cat]) => cat !== 'SIP Savings'),
+    ...Object.entries(trailingFixedBudgets || {}),
+  ]
+    .map(([cat, amt]) => `<div class="row"><span>${cat}</span><span>${formatCurrency(amt)}</span></div>`)
+    .join('');
+
   container.innerHTML = `
+    <h2>Balance</h2>
+    <div class="card">
+      <div class="row"><span>Opening (${monthKey}-01)</span><span>${formatCurrency(opening)}</span></div>
+      <div class="row"><span>Closing (as of today)</span><span>${formatCurrency(closing)}</span></div>
+    </div>
+
     <h2>Discretionary categories</h2>
     <div class="card">${discretionaryRows || '<div class="hint">No discretionary categories budgeted.</div>'}</div>
 
@@ -79,8 +104,12 @@ function renderThisMonth(container) {
       ${ccPaymentDue > 0 ? progressRow('Credit Card Payment Due', ccActual, ccPaymentDue) : ''}
     </div>
 
-    <h2>Fixed Commitments</h2>
-    <div class="card hint">Total: ${formatCurrency(budgetMonth.allocations.fixedCommitmentTotal)}/mo — these are paid in full, not budget caps, so no progress bar.</div>
+    <h2>Fixed payments</h2>
+    <div class="card">
+      ${fixedPaymentRows}
+      <div class="row"><strong>Total</strong><strong>${formatCurrency(budgetMonth.allocations.fixedCommitmentTotal)}</strong></div>
+      <div class="hint">Paid in full each month, not budget caps — no progress bar.</div>
+    </div>
 
     <div class="card">
       <button id="rework-btn" class="danger">Delete & rework this month's budget</button>
@@ -96,6 +125,7 @@ function renderThisMonth(container) {
 
 function renderHistory(container) {
   const transactions = list('transaction');
+  const reconciliations = list('reconciliation');
   const monthKeys = allMonthKeys(transactions);
 
   if (monthKeys.length === 0) {
@@ -113,9 +143,27 @@ function renderHistory(container) {
 
   const latestMonth = monthKeys[monthKeys.length - 1];
 
+  const balanceRows = monthKeys
+    .slice()
+    .reverse()
+    .map((mk) => {
+      const opening = openingBalance(transactions, reconciliations, mk);
+      const closing = closingBalance(transactions, reconciliations, mk);
+      return `<tr><td>${mk}</td><td>${formatCurrency(opening)}</td><td>${formatCurrency(closing)}</td></tr>`;
+    })
+    .join('');
+
   container.innerHTML = `
     <h2>Income / Expense / Savings by month</h2>
     <div class="card">${trendChartHtml(months)}</div>
+
+    <h2>Opening & closing balance</h2>
+    <div class="card">
+      <table>
+        <thead><tr><th>Month</th><th>Opening</th><th>Closing</th></tr></thead>
+        <tbody>${balanceRows}</tbody>
+      </table>
+    </div>
 
     <h2>Spend by category</h2>
     <div class="card">

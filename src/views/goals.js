@@ -58,6 +58,12 @@ export function render(container) {
           ${status.shortfall > 0 ? `<div class="pill warning">Shortfall: ${formatCurrency(status.shortfall)}</div>` : ''}
           <form class="contribute-form">
             <label>Log contribution (₹)<input type="number" name="amount" min="0" step="1" required /></label>
+            <label>Payment method
+              <select name="paymentMethod">
+                <option value="bank">Bank</option>
+                <option value="cash">Cash</option>
+              </select>
+            </label>
             <div class="actions"><button type="submit" class="primary">Add contribution</button></div>
           </form>
         </div>`;
@@ -69,13 +75,14 @@ export function render(container) {
         e.preventDefault();
         const goalId = form.closest('[data-goal-id]').dataset.goalId;
         const goal = goals.find((g) => g.id === goalId);
-        const amount = Number(new FormData(form).get('amount'));
+        const fd = new FormData(form);
+        const amount = Number(fd.get('amount'));
         await addEntity('transaction', {
           date: todayStr(),
           amount,
           category: goal.name,
           note: '',
-          paymentMethod: 'bank',
+          paymentMethod: fd.get('paymentMethod'),
           kind: 'goalContribution',
           goalId,
         });
