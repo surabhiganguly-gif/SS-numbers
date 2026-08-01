@@ -1,6 +1,15 @@
 import { list } from '../state/store.js';
 import { formatCurrency, currentMonthKey } from '../lib/format.js';
-import { categorySpend, totalIncome, totalSpend, totalSavings, monthGranularity, allMonthKeys, spendByCategory } from '../lib/reports.js';
+import {
+  categorySpend,
+  categoryTransactionsForMonth,
+  totalIncome,
+  totalSpend,
+  totalSavings,
+  monthGranularity,
+  allMonthKeys,
+  spendByCategory,
+} from '../lib/reports.js';
 import { trendChartHtml, categoryBarChartHtml } from '../lib/charts.js';
 import { reworkBudgetMonth } from '../lib/budgetMonthOps.js';
 import { openingBalance, closingBalance } from '../lib/bankBalance.js';
@@ -11,7 +20,16 @@ function statusFor(pct) {
   return 'good';
 }
 
-function progressRow(label, spent, budget) {
+function entryListHtml(entries) {
+  if (entries.length === 0) return '<div class="hint">No entries this month.</div>';
+  return entries
+    .map(
+      (t) => `<div class="row"><span>${t.date}${t.note ? ' · ' + t.note : ''}</span><span>${formatCurrency(t.amount)}</span></div>`
+    )
+    .join('');
+}
+
+function progressRow(label, spent, budget, entries = []) {
   const pct = budget > 0 ? (spent / budget) * 100 : spent > 0 ? 100 : 0;
   const status = statusFor(pct);
   const remaining = budget - spent;
@@ -23,6 +41,10 @@ function progressRow(label, spent, budget) {
       </div>
       <div class="progress-track"><div class="progress-fill ${status}" style="width:${Math.min(100, Math.max(0, pct)).toFixed(0)}%"></div></div>
       <div class="progress-label">${pct.toFixed(0)}% used${remaining >= 0 ? ` · ${formatCurrency(remaining)} left` : ` · ${formatCurrency(-remaining)} over`}</div>
+      <details>
+        <summary class="hint">${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}</summary>
+        ${entryListHtml(entries)}
+      </details>
     </div>`;
 }
 
@@ -53,36 +75,44 @@ function renderThisMonth(container) {
 
   const discretionary = { ...squeezeCategoryBudgets, ...floorCategoryBudgets, ...fixedValueBudgets };
   const discretionaryRows = Object.entries(discretionary)
-    .map(([cat, budget]) => progressRow(cat, categorySpend(transactions, cat, monthKey), budget))
+    .map(([cat, budget]) =>
+      progressRow(cat, categorySpend(transactions, cat, monthKey), budget, categoryTransactionsForMonth(transactions, cat, monthKey))
+    )
     .join('');
 
   const goalRows = goalContributions
     .map((gc) => {
       const goal = goals.find((g) => g.id === gc.goalId);
-      const actual = transactions
+      const entries = transactions
         .filter((t) => t.kind === 'goalContribution' && t.goalId === gc.goalId && t.date.slice(0, 7) === monthKey)
-        .reduce((s, t) => s + t.amount, 0);
-      return progressRow(`Goal: ${goal ? goal.name : 'Unknown'}`, actual, gc.amount);
+        .sort((a, b) => (a.date < b.date ? 1 : -1));
+      const actual = entries.reduce((s, t) => s + t.amount, 0);
+      return progressRow(`Goal: ${goal ? goal.name : 'Unknown'}`, actual, gc.amount, entries);
     })
     .join('');
 
-  const liquidActual = transactions
+  const liquidEntries = transactions
     .filter((t) => t.kind === 'savingsContribution' && t.category === 'Liquid Savings' && t.date.slice(0, 7) === monthKey)
-    .reduce((s, t) => s + t.amount, 0);
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
+  const liquidActual = liquidEntries.reduce((s, t) => s + t.amount, 0);
 
-  const sipActual = transactions
+  const sipEntries = transactions
     .filter((t) => t.kind === 'savingsContribution' && t.category === 'SIP Savings' && t.date.slice(0, 7) === monthKey)
-    .reduce((s, t) => s + t.amount, 0);
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
+  const sipActual = sipEntries.reduce((s, t) => s + t.amount, 0);
 
-  const ccActual = transactions
+  const ccEntries = transactions
     .filter((t) => t.kind === 'ccPayment' && t.date.slice(0, 7) === monthKey)
-    .reduce((s, t) => s + t.amount, 0);
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
+  const ccActual = ccEntries.reduce((s, t) => s + t.amount, 0);
 
   const fixedPaymentRows = [
     ...Object.entries(stickyFixedBudgets || {}).filter(([cat]) => cat !== 'SIP Savings'),
     ...Object.entries(trailingFixedBudgets || {}),
   ]
-    .map(([cat, amt]) => `<div class="row"><span>${cat}</span><span>${formatCurrency(amt)}</span></div>`)
+    .map(([cat, budget]) =>
+      progressRow(cat, categorySpend(transactions, cat, monthKey), budget, categoryTransactionsForMonth(transactions, cat, monthKey))
+    )
     .join('');
 
   container.innerHTML = `
@@ -99,16 +129,16 @@ function renderThisMonth(container) {
 
     <h2>Savings & obligations</h2>
     <div class="card">
-      ${progressRow('Liquid Savings', liquidActual, liquidSavingsAmount)}
-      ${progressRow('SIP Savings', sipActual, stickyFixedBudgets?.['SIP Savings'] || 0)}
-      ${ccPaymentDue > 0 ? progressRow('Credit Card Payment Due', ccActual, ccPaymentDue) : ''}
+      ${progressRow('Liquid Savings', liquidActual, liquidSavingsAmount, liquidEntries)}
+      ${progressRow('SIP Savings', sipActual, stickyFixedBudgets?.['SIP Savings'] || 0, sipEntries)}
+      ${ccPaymentDue > 0 ? progressRow('Credit Card Payment Due', ccActual, ccPaymentDue, ccEntries) : ''}
     </div>
 
     <h2>Fixed payments</h2>
+    <p class="hint">Some are paid in installments, so these track actual paid so far vs. budgeted, same as discretionary categories.</p>
     <div class="card">
       ${fixedPaymentRows}
-      <div class="row"><strong>Total</strong><strong>${formatCurrency(budgetMonth.allocations.fixedCommitmentTotal)}</strong></div>
-      <div class="hint">Paid in full each month, not budget caps — no progress bar.</div>
+      <div class="row"><strong>Total budgeted</strong><strong>${formatCurrency(budgetMonth.allocations.fixedCommitmentTotal)}</strong></div>
     </div>
 
     <div class="card">

@@ -25,7 +25,6 @@ export const CATEGORY_GROUPS = {
       'Outside Food',
       'Alcohol',
       'Shopping',
-      'Travel',
       'Untracked Cash Withdrawals',
       'Miscellaneous',
       'Vehicle Maintenance',
@@ -49,12 +48,15 @@ export const CATEGORY_GROUPS = {
 export const SQUEEZE_CATEGORIES = ['Groceries', 'Outside Food', 'Shopping', 'Alcohol'];
 
 // Non-target variable categories that feed the variable-spend floor at plain trailing average.
-export const FLOOR_TRAILING_CATEGORIES = ['Fuel', 'Travel', 'Untracked Cash Withdrawals'];
+export const FLOOR_TRAILING_CATEGORIES = ['Fuel', 'Untracked Cash Withdrawals'];
 
 // Historical category names merged into the single "Vehicle Maintenance"
 // category — kept around only so the one-time migration (store.js) knows what
 // to fold in.
 export const LEGACY_VEHICLE_MAINTENANCE_CATEGORIES = ['Vehicle Maintenance (Virtus)', 'Vehicle Maintenance (Jimny)'];
+
+// "Travel" was merged into "Fuel" — kept around only for the one-time migration.
+export const LEGACY_TRAVEL_CATEGORIES = ['Travel'];
 
 // Variable-taxonomy categories budgeted as a fixed, user-editable value (sticky,
 // carried forward until changed) rather than a trailing average or a squeeze.

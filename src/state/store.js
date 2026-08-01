@@ -1,6 +1,6 @@
 import { loadAllDecrypted, saveEncrypted, deleteEncrypted } from '../db/db.js';
 import { newId } from '../lib/id.js';
-import { LEGACY_VEHICLE_MAINTENANCE_CATEGORIES } from '../lib/categories.js';
+import { LEGACY_VEHICLE_MAINTENANCE_CATEGORIES, LEGACY_TRAVEL_CATEGORIES } from '../lib/categories.js';
 import { effectiveValue, currentMonthKey } from '../lib/format.js';
 
 const listeners = new Set();
@@ -53,6 +53,41 @@ export async function unlockWith(key) {
 // not just new ones going forward.
 async function runMigrations() {
   await migrateVehicleMaintenanceCategory();
+  await migrateTravelToFuel();
+  await migrateStaffTransactionNotes();
+  await migrateStaffPaymentMethodToBank();
+}
+
+// Staff advances/payments are always bank now (no more cash/bank choice) — but
+// existing entries logged before that decision may still carry their original
+// paymentMethod, which would silently exclude them from the bank balance.
+async function migrateStaffPaymentMethodToBank() {
+  const txs = state.collections.transaction.filter(
+    (t) => (t.kind === 'staffAdvance' || t.kind === 'staffPayment') && t.paymentMethod !== 'bank'
+  );
+  for (const t of txs) {
+    await updateEntity('transaction', t.id, { paymentMethod: 'bank' });
+  }
+}
+
+async function migrateTravelToFuel() {
+  const txsToMigrate = state.collections.transaction.filter((t) => LEGACY_TRAVEL_CATEGORIES.includes(t.category));
+  for (const t of txsToMigrate) {
+    await updateEntity('transaction', t.id, { category: 'Fuel' });
+  }
+}
+
+async function migrateStaffTransactionNotes() {
+  const txs = state.collections.transaction.filter(
+    (t) => (t.kind === 'staffAdvance' || t.kind === 'staffPayment') && t.staffId
+  );
+  for (const t of txs) {
+    const staff = state.collections.staffMember.find((s) => s.id === t.staffId);
+    if (!staff || (t.note && t.note.includes(staff.name))) continue;
+    const prefix = t.kind === 'staffAdvance' ? `Advance to ${staff.name}` : `Payment to ${staff.name}`;
+    const newNote = t.note ? `${prefix} — ${t.note}` : prefix;
+    await updateEntity('transaction', t.id, { note: newNote });
+  }
 }
 
 async function migrateVehicleMaintenanceCategory() {

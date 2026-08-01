@@ -14,9 +14,16 @@ export function monthTransactions(transactions, atMonthKey) {
 const SPEND_KINDS = ['expense', 'ccPurchase', 'staffAdvance', 'staffPayment'];
 
 export function categorySpend(transactions, category, atMonthKey) {
+  return categoryTransactionsForMonth(transactions, category, atMonthKey).reduce(
+    (sum, t) => sum + effectiveSpendAmount(t),
+    0
+  );
+}
+
+export function categoryTransactionsForMonth(transactions, category, atMonthKey) {
   return monthTransactions(transactions, atMonthKey)
     .filter((t) => t.category === category && SPEND_KINDS.includes(t.kind))
-    .reduce((sum, t) => sum + effectiveSpendAmount(t), 0);
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
 }
 
 export function totalIncome(transactions, atMonthKey) {
