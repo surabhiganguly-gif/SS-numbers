@@ -10,6 +10,14 @@ import {
   resolveShortfall,
   computeBudgetProposal,
 } from '../src/lib/budgeting.js';
+import {
+  CATEGORY_GROUPS,
+  SQUEEZE_CATEGORIES,
+  FLOOR_TRAILING_CATEGORIES,
+  FIXED_VALUE_CATEGORIES,
+  STICKY_FIXED_CATEGORIES,
+  TRAILING_FIXED_CATEGORIES,
+} from '../src/lib/categories.js';
 
 let passed = 0;
 let failed = 0;
@@ -238,6 +246,26 @@ test('computeBudgetProposal clamps liquid savings pct to the 5-15% band', () => 
     squeezeState: initialSqueezeState(),
   });
   assert.equal(generous.liquidSavingsPct, 0.15);
+});
+
+test('every fixed/variable category is budgeted somewhere — none silently fall through', () => {
+  // Categories handled outside the generic buckets below, by name, elsewhere in
+  // the engine/UI (Liquid Savings has its own dedicated amount, not a bucket).
+  const SPECIALLY_HANDLED = ['Liquid Savings'];
+
+  const budgetedCategories = new Set([
+    ...SQUEEZE_CATEGORIES,
+    ...FLOOR_TRAILING_CATEGORIES,
+    ...FIXED_VALUE_CATEGORIES,
+    ...STICKY_FIXED_CATEGORIES,
+    ...TRAILING_FIXED_CATEGORIES,
+    ...SPECIALLY_HANDLED,
+  ]);
+
+  const loggableCategories = [...CATEGORY_GROUPS.fixed.categories, ...CATEGORY_GROUPS.variable.categories, ...CATEGORY_GROUPS.savings.categories];
+
+  const missing = loggableCategories.filter((cat) => !budgetedCategories.has(cat));
+  assert.equal(missing.join(', '), '', `Categories loggable but not budgeted anywhere: ${missing.join(', ')}`);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

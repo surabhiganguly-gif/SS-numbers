@@ -48,7 +48,7 @@ export const CATEGORY_GROUPS = {
 export const SQUEEZE_CATEGORIES = ['Groceries', 'Outside Food', 'Shopping', 'Alcohol'];
 
 // Non-target variable categories that feed the variable-spend floor at plain trailing average.
-export const FLOOR_TRAILING_CATEGORIES = ['Fuel', 'Untracked Cash Withdrawals'];
+export const FLOOR_TRAILING_CATEGORIES = ['Fuel', 'Health', 'Untracked Cash Withdrawals'];
 
 // Historical category names merged into the single "Vehicle Maintenance"
 // category — kept around only so the one-time migration (store.js) knows what
