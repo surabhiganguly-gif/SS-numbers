@@ -47,6 +47,13 @@ const findCol = (cells, ...patterns) => {
   return -1;
 };
 
+// The same statement saved as .xls or .xlsx can hand back a reference as text with leading
+// zeros or as a plain number; normalise so both give the same line key and dedupe.
+function normaliseRef(v) {
+  const t = String(v ?? '').trim().replace(/\.0+$/, '');
+  return /^\d+$/.test(t) ? t.replace(/^0+(?=\d)/, '') : t;
+}
+
 export function parseStatementRows(rows) {
   let header = -1;
   let cols = null;
@@ -80,7 +87,7 @@ export function parseStatementRows(rows) {
     lines.push({
       date,
       narr: String(row[cols.narr] ?? '').trim().replace(/\s+/g, ' '),
-      ref: cols.ref >= 0 ? String(row[cols.ref] ?? '').trim() : '',
+      ref: cols.ref >= 0 ? normaliseRef(row[cols.ref]) : '',
       wd,
       dep,
       bal: cols.bal >= 0 && row[cols.bal] !== '' ? amount(row[cols.bal]) : null,

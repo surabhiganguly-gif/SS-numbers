@@ -9,9 +9,7 @@ const SPECIAL_SECTOR = 0xfffffffc; // anything >= this is not a real sector id
 export async function readSpreadsheet(file) {
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (isOle2(bytes)) return parseXls(bytes);
-  if (bytes[0] === 0x50 && bytes[1] === 0x4b) {
-    throw new Error("This is a newer .xlsx file, which isn't supported yet — download the statement as .xls or CSV instead.");
-  }
+  if (bytes[0] === 0x50 && bytes[1] === 0x4b) return parseXlsx(bytes); // "PK" — a zip, i.e. .xlsx
   return parseCsv(new TextDecoder('utf-8').decode(bytes));
 }
 
@@ -217,6 +215,146 @@ export function parseXls(bytes) {
         const count = (len - 6) / 6;
         for (let i = 0; i < count; i++) put(row, first + i, decodeRk(dv.getUint32(start + 4 + i * 6 + 2, true)));
       }
+    }
+  }
+
+  const rows = [];
+  for (let r = 0; r <= maxRow; r++) {
+    const row = [];
+    for (let c = 0; c <= maxCol; c++) row.push(cells.get(r * 65536 + c) ?? '');
+    rows.push(row);
+  }
+  return rows;
+}
+
+// ---------------------------------------------------------------- .xlsx (zip of XML)
+
+const MAX_ENTRY_BYTES = 50 * 1024 * 1024; // a bank statement is tiny; refuse anything absurd
+const REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+
+function listZipEntries(bytes) {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let eocd = -1;
+  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 22 - 65535); i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error("This file looks damaged — it isn't a valid .xlsx.");
+  const count = dv.getUint16(eocd + 10, true);
+  let p = dv.getUint32(eocd + 16, true);
+  const entries = new Map();
+  for (let n = 0; n < count && dv.getUint32(p, true) === 0x02014b50; n++) {
+    const nameLen = dv.getUint16(p + 28, true);
+    const extraLen = dv.getUint16(p + 30, true);
+    const commentLen = dv.getUint16(p + 32, true);
+    entries.set(new TextDecoder().decode(bytes.subarray(p + 46, p + 46 + nameLen)), {
+      method: dv.getUint16(p + 10, true),
+      compSize: dv.getUint32(p + 20, true),
+      size: dv.getUint32(p + 24, true),
+      localOffset: dv.getUint32(p + 42, true),
+    });
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+  return entries;
+}
+
+async function readZipEntry(bytes, entry) {
+  if (entry.size > MAX_ENTRY_BYTES) throw new Error('This spreadsheet is unexpectedly large.');
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const o = entry.localOffset;
+  const start = o + 30 + dv.getUint16(o + 26, true) + dv.getUint16(o + 28, true);
+  const raw = bytes.subarray(start, start + entry.compSize);
+  if (entry.method === 0) return raw;
+  if (entry.method !== 8) throw new Error('This .xlsx uses a compression method that is not supported.');
+  if (typeof DecompressionStream === 'undefined') {
+    throw new Error("This browser can't open .xlsx files — save the statement as .xls or CSV instead.");
+  }
+  const reader = new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
+  const parts = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > MAX_ENTRY_BYTES) { await reader.cancel(); throw new Error('This spreadsheet is unexpectedly large.'); }
+    parts.push(value);
+  }
+  return concat(parts, total);
+}
+
+function parseXml(bytes) {
+  const doc = new DOMParser().parseFromString(new TextDecoder('utf-8').decode(bytes), 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length) throw new Error("This file looks damaged — it isn't a valid .xlsx.");
+  return doc;
+}
+
+const byLocalName = (node, name) => Array.from(node.getElementsByTagNameNS('*', name));
+const childrenNamed = (node, name) => Array.from(node.children).filter((el) => el.localName === name);
+
+function colIndex(ref) {
+  let n = 0;
+  for (const ch of ref.match(/^[A-Za-z]+/)[0].toUpperCase()) n = n * 26 + (ch.charCodeAt(0) - 64);
+  return n - 1;
+}
+
+export async function parseXlsx(bytes) {
+  const entries = listZipEntries(bytes);
+  const read = async (name) => (entries.has(name) ? parseXml(await readZipEntry(bytes, entries.get(name))) : null);
+
+  const shared = [];
+  const sst = await read('xl/sharedStrings.xml');
+  if (sst) {
+    for (const si of byLocalName(sst, 'si')) {
+      // Join rich-text runs; skip phonetic (furigana) text.
+      shared.push(byLocalName(si, 't').filter((t) => t.parentNode.localName !== 'rPh').map((t) => t.textContent).join(''));
+    }
+  }
+
+  // First worksheet, following the workbook's own relationship rather than assuming a file name.
+  let sheetPath = null;
+  const workbook = await read('xl/workbook.xml');
+  const rels = await read('xl/_rels/workbook.xml.rels');
+  if (workbook && rels) {
+    const first = byLocalName(workbook, 'sheet')[0];
+    const rid = first && (first.getAttributeNS(REL_NS, 'id') || first.getAttribute('r:id'));
+    const rel = byLocalName(rels, 'Relationship').find((r) => r.getAttribute('Id') === rid);
+    if (rel) {
+      const target = rel.getAttribute('Target');
+      sheetPath = target.startsWith('/') ? target.slice(1) : `xl/${target}`;
+    }
+  }
+  if (!sheetPath || !entries.has(sheetPath)) {
+    sheetPath = [...entries.keys()].filter((n) => /^xl\/worksheets\/sheet\d+\.xml$/.test(n)).sort()[0];
+  }
+  if (!sheetPath) throw new Error('No worksheet found in this .xlsx file.');
+
+  const sheet = await read(sheetPath);
+  const cells = new Map();
+  let maxRow = -1;
+  let maxCol = -1;
+  let rowCursor = -1;
+  for (const rowEl of byLocalName(sheet, 'row')) {
+    rowCursor = rowEl.hasAttribute('r') ? Number(rowEl.getAttribute('r')) - 1 : rowCursor + 1;
+    let colCursor = -1;
+    for (const c of childrenNamed(rowEl, 'c')) {
+      const ref = c.getAttribute('r');
+      const col = ref ? colIndex(ref) : colCursor + 1;
+      colCursor = col;
+
+      const type = c.getAttribute('t');
+      const v = childrenNamed(c, 'v')[0];
+      let value = '';
+      if (type === 'inlineStr') value = byLocalName(c, 't').map((t) => t.textContent).join('');
+      else if (v) {
+        const raw = v.textContent;
+        if (type === 's') value = shared[Number(raw)] ?? '';
+        else if (type === 'str') value = raw;
+        else if (type === 'b' || type === 'e') value = '';
+        else value = raw === '' || Number.isNaN(Number(raw)) ? '' : Number(raw);
+      }
+      if (value === '') continue;
+      cells.set(rowCursor * 65536 + col, value);
+      maxRow = Math.max(maxRow, rowCursor);
+      maxCol = Math.max(maxCol, col);
     }
   }
 
