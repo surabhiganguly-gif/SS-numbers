@@ -83,6 +83,7 @@ function renderThisMonth(container) {
   const goalRows = goalContributions
     .map((gc) => {
       const goal = goals.find((g) => g.id === gc.goalId);
+      if (!goal) return ''; // goal was deleted after this budget was confirmed
       const entries = transactions
         .filter((t) => t.kind === 'goalContribution' && t.goalId === gc.goalId && t.date.slice(0, 7) === monthKey)
         .sort((a, b) => (a.date < b.date ? 1 : -1));

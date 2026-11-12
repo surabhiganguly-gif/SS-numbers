@@ -103,8 +103,44 @@ export async function decryptJSON(key, { iv, ciphertext }) {
   return JSON.parse(new TextDecoder().decode(plaintext));
 }
 
+// Chunked: spreading a whole-backup-sized buffer into fromCharCode() overflows
+// the call stack, which single-row encryption never hit.
+// --- Passphrase-protected backups (portable across devices/passkeys) ---
+
+const BACKUP_KDF_ITERATIONS = 600000;
+
+async function deriveKeyFromPassphrase(passphrase, salt, iterations) {
+  const baseKey = await crypto.subtle.importKey('raw', new TextEncoder().encode(passphrase), 'PBKDF2', false, [
+    'deriveKey',
+  ]);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+export async function encryptWithPassphrase(passphrase, obj) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const key = await deriveKeyFromPassphrase(passphrase, salt, BACKUP_KDF_ITERATIONS);
+  const { iv, ciphertext } = await encryptJSON(key, obj);
+  return { kdf: 'PBKDF2-SHA256', iterations: BACKUP_KDF_ITERATIONS, salt: bufferToBase64(salt), iv, ciphertext };
+}
+
+export async function decryptWithPassphrase(passphrase, { salt, iterations, iv, ciphertext }) {
+  const key = await deriveKeyFromPassphrase(passphrase, new Uint8Array(base64ToBuffer(salt)), iterations);
+  return decryptJSON(key, { iv, ciphertext });
+}
+
 function bufferToBase64(buf) {
-  return btoa(String.fromCharCode(...new Uint8Array(buf)));
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
 }
 
 function base64ToBuffer(b64) {

@@ -140,6 +140,23 @@ export async function updateEntity(type, id, patch) {
   return updated;
 }
 
+// Merge records from a backup into the live store: same id overwrites, new ids
+// are added, nothing existing is deleted. Re-encrypts under this device's key.
+export async function importRecords(records) {
+  let count = 0;
+  for (const { type, ...entity } of records) {
+    if (!state.collections[type] || !entity.id) continue;
+    const idx = state.collections[type].findIndex((e) => e.id === entity.id);
+    if (idx === -1) state.collections[type].push(entity);
+    else state.collections[type][idx] = entity;
+    await saveEncrypted(state.encryptionKey, type, entity);
+    count++;
+  }
+  await runMigrations();
+  notify();
+  return count;
+}
+
 export async function removeEntity(type, id) {
   state.collections[type] = state.collections[type].filter((e) => e.id !== id);
   await deleteEncrypted(id);

@@ -1,10 +1,12 @@
 import { list } from '../state/store.js';
+import { getMeta } from '../db/db.js';
 import { formatCurrency, currentMonthKey } from '../lib/format.js';
 import { computeBankBalance } from '../lib/bankBalance.js';
 import { computeCCOutstanding } from '../lib/creditCard.js';
 import { totalIncome, totalSpend, categorySpend } from '../lib/reports.js';
 
 const RECONCILE_REMINDER_DAYS = 14;
+const BACKUP_REMINDER_DAYS = 14;
 
 function daysSince(dateStr) {
   return (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24);
@@ -39,6 +41,7 @@ export function render(container) {
       <div class="row"><span class="hint">Credit Card Outstanding</span><span id="cc-value" class="masked-value" style="font-size:1rem">●●●●●●</span></div>
     </div>
 
+    <div id="backup-reminder"></div>
     ${reconcileDue ? `<div class="card"><a href="#/reconcile">Time to reconcile your bank balance →</a></div>` : ''}
 
     <h2>Quick budget check</h2>
@@ -57,6 +60,16 @@ export function render(container) {
       <a href="#/historical-import">Historical data import →</a>
     </div>
   `;
+
+  // Your data exists only on this phone — nag gently once there's something worth losing.
+  getMeta('lastBackupAt').then((lastBackupAt) => {
+    const stale = !lastBackupAt || daysSince(lastBackupAt) >= BACKUP_REMINDER_DAYS;
+    if (transactions.length > 0 && stale) {
+      container.querySelector('#backup-reminder').innerHTML = `<div class="card"><a href="#/settings">${
+        lastBackupAt ? 'Your last backup is over two weeks old' : "You haven't backed up yet"
+      } — your data lives only on this phone. Back up to Drive →</a></div>`;
+    }
+  });
 
   let revealed = false;
   container.querySelector('#reveal-toggle').addEventListener('click', () => {

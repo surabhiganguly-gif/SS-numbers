@@ -1,4 +1,4 @@
-import { list, addEntity } from '../state/store.js';
+import { list, addEntity, removeEntity } from '../state/store.js';
 import { formatCurrency, currentMonthKey } from '../lib/format.js';
 import { computeRequiredMonthlyContribution, goalStatus } from '../lib/budgeting.js';
 
@@ -15,6 +15,7 @@ export function render(container) {
       <label>Target date<input type="date" name="targetDate" required /></label>
       <div class="actions"><button type="submit" class="primary">Create goal</button></div>
     </form>
+    <div id="goals-notice"></div>
     <div id="goals-list"></div>
   `;
 
@@ -66,9 +67,43 @@ export function render(container) {
             </label>
             <div class="actions"><button type="submit" class="primary">Add contribution</button></div>
           </form>
+          <div class="delete-area">
+            <button type="button" class="danger delete-goal-btn">Delete goal</button>
+            <div class="delete-confirm" style="display:none">
+              <p class="hint">Delete "${g.name}"? Contributions you've already logged stay in your transaction log and bank balance — only the goal itself goes away.</p>
+              <button type="button" class="danger confirm-delete-goal-btn">Yes, delete goal</button>
+              <button type="button" class="cancel-delete-goal-btn">Cancel</button>
+            </div>
+          </div>
         </div>`;
       })
       .join('');
+
+    el.querySelectorAll('[data-goal-id]').forEach((card) => {
+      const goalId = card.dataset.goalId;
+      const deleteBtn = card.querySelector('.delete-goal-btn');
+      const confirmBox = card.querySelector('.delete-confirm');
+
+      deleteBtn.addEventListener('click', () => {
+        deleteBtn.style.display = 'none';
+        confirmBox.style.display = 'block';
+      });
+      card.querySelector('.cancel-delete-goal-btn').addEventListener('click', () => {
+        confirmBox.style.display = 'none';
+        deleteBtn.style.display = 'inline-block';
+      });
+      card.querySelector('.confirm-delete-goal-btn').addEventListener('click', async () => {
+        const monthKey = currentMonthKey();
+        const budgetStillUsesGoal = list('budgetMonth').some(
+          (b) => b.monthKey === monthKey && b.confirmed && b.allocations.goalContributions.some((gc) => gc.goalId === goalId)
+        );
+        await removeEntity('goal', goalId);
+        container.querySelector('#goals-notice').innerHTML = budgetStillUsesGoal
+          ? `<div class="card pill warning" style="display:block">Goal deleted. This month's confirmed budget still includes it — on the Budget tab, use "Delete &amp; rework this month's budget" to recalculate without it.</div>`
+          : '';
+        renderGoals();
+      });
+    });
 
     el.querySelectorAll('.contribute-form').forEach((form) => {
       form.addEventListener('submit', async (e) => {
