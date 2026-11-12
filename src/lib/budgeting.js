@@ -48,7 +48,7 @@ export function isInstallmentActiveInMonth(plan, atMonthKey) {
 export function computeCCPaymentDue({ transactions, ccInstallmentPlans, atMonthKey }) {
   const prevMonth = addMonths(atMonthKey, -1);
   const lumpsumDue = transactions
-    .filter((t) => t.kind === 'ccPurchase' && t.ccPlanType === 'lumpsum' && monthKey(t.date) === prevMonth)
+    .filter((t) => t.kind === 'ccPurchase' && !t.ccCleared && t.ccPlanType === 'lumpsum' && monthKey(t.date) === prevMonth)
     .reduce((sum, t) => sum + t.amount, 0);
   const installmentsDue = ccInstallmentPlans
     .filter((p) => isInstallmentActiveInMonth(p, atMonthKey))

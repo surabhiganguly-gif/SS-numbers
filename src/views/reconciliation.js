@@ -7,14 +7,18 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Always read the balance fresh: an adjustment recorded a moment ago changes it, and a second
+// reconciliation on the same screen must compare against the new figure, not the one from when
+// the page opened.
+const currentAppBalance = () => computeBankBalance(list('transaction'), list('reconciliation'));
+
 export function render(container) {
-  const appBalance = computeBankBalance(list('transaction'), list('reconciliation'));
 
   container.innerHTML = `
     <h1>Reconcile Bank Balance</h1>
     <div class="card">
       <div class="hint">App's calculated balance</div>
-      <div class="masked-value" style="font-size:1.6rem">${formatCurrency(appBalance)}</div>
+      <div class="masked-value" id="app-balance" style="font-size:1.6rem">${formatCurrency(currentAppBalance())}</div>
     </div>
     <form id="reconcile-form" class="card">
       <label>Actual bank balance (₹)<input type="number" name="actualBalance" step="1" required /></label>
@@ -28,11 +32,20 @@ export function render(container) {
   container.querySelector('#reconcile-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const actualBalance = Number(new FormData(e.target).get('actualBalance'));
-    const difference = actualBalance - appBalance;
-    renderResult(actualBalance, difference);
+    const appBalance = currentAppBalance();
+    renderResult(actualBalance, actualBalance - appBalance, appBalance);
   });
 
-  function renderResult(actualBalance, difference) {
+  // After anything is recorded: show the new balance, empty the form and the result so the next
+  // check starts clean — you can reconcile as many times as you like.
+  function afterRecord(message) {
+    container.querySelector('#app-balance').textContent = formatCurrency(currentAppBalance());
+    container.querySelector('#reconcile-form').reset();
+    container.querySelector('#result').innerHTML = `<div class="hint">${message}</div>`;
+    renderHistory();
+  }
+
+  function renderResult(actualBalance, difference, appBalance) {
     const resultEl = container.querySelector('#result');
     if (Math.abs(difference) < 1) {
       resultEl.innerHTML = `
@@ -42,8 +55,7 @@ export function render(container) {
         </div>`;
       resultEl.querySelector('#confirm-match').addEventListener('click', async () => {
         await addEntity('reconciliation', { date: todayStr(), appBalance, actualBalance, resolution: 'matched', adjustmentAmount: 0 });
-        renderHistory();
-        resultEl.innerHTML = '<div class="hint">Recorded.</div>';
+        afterRecord('Recorded — matched.');
       });
       return;
     }
@@ -69,8 +81,7 @@ export function render(container) {
         resolution: 'adjustment',
         adjustmentAmount: difference,
       });
-      renderHistory();
-      resultEl.innerHTML = '<div class="hint">Adjustment recorded — the app\'s balance now matches your bank.</div>';
+      afterRecord('Adjustment recorded — the app\'s balance now matches your bank. You can reconcile again any time.');
     });
 
     resultEl.querySelector('#dismiss').addEventListener('click', async () => {
@@ -81,8 +92,7 @@ export function render(container) {
         resolution: 'dismissed',
         adjustmentAmount: 0,
       });
-      renderHistory();
-      resultEl.innerHTML = '<div class="hint">Dismissed — you\'ll be reminded again next check-in.</div>';
+      afterRecord('Dismissed — nothing was changed. You can reconcile again any time.');
     });
   }
 
@@ -96,7 +106,7 @@ export function render(container) {
     el.innerHTML = items
       .map(
         (r) => `<div class="card row">
-          <span>${r.date} — ${r.resolution}</span>
+          <span>${r.date} — ${r.resolution}${r.resolution === 'adjustment' ? ` (${formatCurrency(r.adjustmentAmount)})` : ''}</span>
           <span>${formatCurrency(r.actualBalance)}</span>
         </div>`
       )
