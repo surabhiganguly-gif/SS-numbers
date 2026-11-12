@@ -9,6 +9,7 @@ import {
 } from '../crypto/crypto.js';
 import { getState, importRecords } from '../state/store.js';
 import { CATEGORY_GROUPS } from '../lib/categories.js';
+import { APP_VERSION } from '../lib/version.js';
 
 const MIN_PASSPHRASE_LENGTH = 8;
 
@@ -50,6 +51,9 @@ export function render(container) {
       <div id="import-status" class="hint"></div>
       <p class="hint">Importing adds or updates records from the file; it never deletes what's already here.</p>
     </div>
+
+    <h2>About</h2>
+    <div class="card"><div class="row"><span>App version</span><span id="app-version">${APP_VERSION}</span></div></div>
 
     <h2>Category taxonomy</h2>
     <div class="card">

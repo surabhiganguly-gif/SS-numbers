@@ -1,5 +1,6 @@
 import * as assert from './assert.js';
 import { parseCsv } from '../src/lib/spreadsheet.js';
+import { APP_VERSION } from '../src/lib/version.js';
 import {
   parseDate,
   parseStatementRows,
@@ -213,6 +214,15 @@ test('parseCsv copes with quotes, embedded commas, tabs and a byte-order mark', 
   assert.equal(JSON.stringify(parseCsv('﻿a,"b, c",d\n1,2,3')), JSON.stringify([['a', 'b, c', 'd'], ['1', '2', '3']]));
   assert.equal(JSON.stringify(parseCsv('a\tb\n1\t2')), JSON.stringify([['a', 'b'], ['1', '2']]));
   assert.equal(JSON.stringify(parseCsv('x,"say ""hi"""')), JSON.stringify([['x', 'say "hi"']]));
+});
+
+// The label in Settings is only useful if it can't drift from what's actually deployed.
+const swSource = await (await fetch(new URL('../sw.js', import.meta.url))).text();
+test('the app version shown in Settings matches the service worker cache version', () => {
+  assert.equal(swSource.match(/finance-tracker-(v\d+)/)[1], APP_VERSION);
+});
+test('the service worker revalidates instead of trusting the 10-minute HTTP cache', () => {
+  assert.ok(/cache:\s*'no-cache'/.test(swSource));
 });
 
 console.log(`\nstatement: ${passed} passed, ${failed} failed`);

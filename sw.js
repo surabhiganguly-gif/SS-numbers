@@ -1,4 +1,4 @@
-const CACHE_NAME = 'finance-tracker-v12';
+const CACHE_NAME = 'finance-tracker-v13';
 const APP_SHELL = [
   './',
   './index.html',
@@ -19,6 +19,7 @@ const APP_SHELL = [
   './src/lib/reports.js',
   './src/lib/charts.js',
   './src/lib/spreadsheet.js',
+  './src/lib/version.js',
   './src/lib/statement.js',
   './src/views/auth.js',
   './src/views/home.js',
@@ -56,7 +57,10 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   event.respondWith(
-    fetch(event.request)
+    // 'no-cache' = always revalidate with the server (a cheap 304 when unchanged).
+    // Without it GitHub Pages' 10-minute max-age lets a phone keep running the
+    // previous version for up to 10 minutes after a deploy.
+    fetch(event.request, { cache: 'no-cache' })
       .then((response) => {
         const copy = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
