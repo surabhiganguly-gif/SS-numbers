@@ -14,6 +14,7 @@ import * as staffLedgerView from './views/staffLedger.js';
 import * as reconciliationView from './views/reconciliation.js';
 import * as historicalImportView from './views/historicalImport.js';
 import * as settingsView from './views/settings.js';
+import * as statementImportView from './views/statementImport.js';
 
 const NAV_ITEMS = [
   { path: '/', icon: '🏠', label: 'Home' },
@@ -50,6 +51,7 @@ registerRoute('/staff', guarded(staffLedgerView));
 registerRoute('/reconcile', guarded(reconciliationView));
 registerRoute('/historical-import', guarded(historicalImportView));
 registerRoute('/settings', guarded(settingsView));
+registerRoute('/import-statement', guarded(statementImportView));
 
 function renderNav() {
   const nav = document.getElementById('bottom-nav');

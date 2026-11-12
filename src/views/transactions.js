@@ -39,6 +39,7 @@ function inferKind(category, paymentMethod) {
 export function render(container) {
   container.innerHTML = `
     <h1>Transactions</h1>
+    <p class="hint"><a href="#/import-statement">Import a bank statement instead →</a></p>
     <form id="tx-form" class="card">
       <label>Date<input type="date" name="date" value="${todayStr()}" required /></label>
       <label>Amount (₹)<input type="number" name="amount" min="0" step="1" required /></label>

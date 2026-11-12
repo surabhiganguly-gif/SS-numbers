@@ -25,6 +25,7 @@ export const CATEGORY_GROUPS = {
       'Outside Food',
       'Alcohol',
       'Shopping',
+      'Travel',
       'Untracked Cash Withdrawals',
       'Miscellaneous',
       'Vehicle Maintenance',
@@ -55,14 +56,14 @@ export const FLOOR_TRAILING_CATEGORIES = ['Fuel', 'Health', 'Untracked Cash With
 // to fold in.
 export const LEGACY_VEHICLE_MAINTENANCE_CATEGORIES = ['Vehicle Maintenance (Virtus)', 'Vehicle Maintenance (Jimny)'];
 
-// "Travel" was merged into "Fuel" — kept around only for the one-time migration.
-export const LEGACY_TRAVEL_CATEGORIES = ['Travel'];
-
 // Variable-taxonomy categories budgeted as a fixed, user-editable value (sticky,
 // carried forward until changed) rather than a trailing average or a squeeze.
+// Travel is lumpy (one big trip skews any average), so it's a planned amount:
+// ₹0 until you set one for a trip.
 export const FIXED_VALUE_DEFAULTS = {
   'Vehicle Maintenance': 4000,
   Miscellaneous: 10000,
+  Travel: 0,
 };
 export const FIXED_VALUE_CATEGORIES = Object.keys(FIXED_VALUE_DEFAULTS);
 

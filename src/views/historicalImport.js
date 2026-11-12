@@ -17,10 +17,12 @@ function kindFor(category) {
 }
 
 export function render(container) {
-  const alreadyImported = list('transaction').some((t) => t.granularity === 'monthly-lump');
+  // Bank-statement imports are monthly totals too, but they aren't this screen's one-time import.
+  const isHistoricalLump = (t) => t.granularity === 'monthly-lump' && t.source !== 'statement';
+  const alreadyImported = list('transaction').some(isHistoricalLump);
 
   if (alreadyImported) {
-    const imported = list('transaction').filter((t) => t.granularity === 'monthly-lump');
+    const imported = list('transaction').filter(isHistoricalLump);
     container.innerHTML = `
       <h1>Historical Import</h1>
       <p class="hint">June/July totals were already imported as monthly lump sums (not daily detail) — reports flag this period separately from real daily entries.</p>

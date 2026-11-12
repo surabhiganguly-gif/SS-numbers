@@ -1,6 +1,11 @@
 import { loadAllDecrypted, saveEncrypted, deleteEncrypted } from '../db/db.js';
 import { newId } from '../lib/id.js';
-import { LEGACY_VEHICLE_MAINTENANCE_CATEGORIES, LEGACY_TRAVEL_CATEGORIES } from '../lib/categories.js';
+import {
+  LEGACY_VEHICLE_MAINTENANCE_CATEGORIES,
+  STICKY_FIXED_CATEGORIES,
+  FIXED_VALUE_CATEGORIES,
+  FIXED_VALUE_DEFAULTS,
+} from '../lib/categories.js';
 import { effectiveValue, currentMonthKey } from '../lib/format.js';
 
 const listeners = new Set();
@@ -53,9 +58,39 @@ export async function unlockWith(key) {
 // not just new ones going forward.
 async function runMigrations() {
   await migrateVehicleMaintenanceCategory();
-  await migrateTravelToFuel();
   await migrateStaffTransactionNotes();
   await migrateStaffPaymentMethodToBank();
+  await ensureFixedCommitments();
+}
+
+// The most recent past month with a logged amount for this category.
+function lastActualForCategory(category, atMonthKey) {
+  const byMonth = {};
+  for (const t of state.collections.transaction) {
+    if (t.category !== category) continue;
+    const mk = t.date.slice(0, 7);
+    if (mk >= atMonthKey) continue;
+    byMonth[mk] = (byMonth[mk] || 0) + t.amount;
+  }
+  const months = Object.keys(byMonth).sort();
+  return months.length ? byMonth[months[months.length - 1]] : 0;
+}
+
+// "Carry forward last month's value unless told otherwise": every sticky/fixed-value
+// commitment needs a starting value, otherwise the budget treats Rent/EMIs/SIP as ₹0.
+// Seeds from the fixed default, or else the last month actually logged — and runs on
+// unlock and after every import, so it never depends on visiting a settings screen.
+export async function ensureFixedCommitments() {
+  const atMonthKey = currentMonthKey();
+  for (const name of [...STICKY_FIXED_CATEGORIES, ...FIXED_VALUE_CATEGORIES]) {
+    let commitment = state.collections.fixedCommitment.find((c) => c.name === name);
+    if (!commitment) commitment = await addEntity('fixedCommitment', { name });
+    if (state.collections.fixedCommitmentVersion.some((v) => v.commitmentId === commitment.id)) continue;
+    const amount = name in FIXED_VALUE_DEFAULTS ? FIXED_VALUE_DEFAULTS[name] : lastActualForCategory(name, atMonthKey);
+    if (amount > 0) {
+      await addEntity('fixedCommitmentVersion', { commitmentId: commitment.id, amount, effectiveFrom: atMonthKey });
+    }
+  }
 }
 
 // Staff advances/payments are always bank now (no more cash/bank choice) — but
@@ -67,13 +102,6 @@ async function migrateStaffPaymentMethodToBank() {
   );
   for (const t of txs) {
     await updateEntity('transaction', t.id, { paymentMethod: 'bank' });
-  }
-}
-
-async function migrateTravelToFuel() {
-  const txsToMigrate = state.collections.transaction.filter((t) => LEGACY_TRAVEL_CATEGORIES.includes(t.category));
-  for (const t of txsToMigrate) {
-    await updateEntity('transaction', t.id, { category: 'Fuel' });
   }
 }
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'finance-tracker-v10';
+const CACHE_NAME = 'finance-tracker-v11';
 const APP_SHELL = [
   './',
   './index.html',
@@ -18,6 +18,8 @@ const APP_SHELL = [
   './src/lib/creditCard.js',
   './src/lib/reports.js',
   './src/lib/charts.js',
+  './src/lib/spreadsheet.js',
+  './src/lib/statement.js',
   './src/views/auth.js',
   './src/views/home.js',
   './src/views/budget.js',
@@ -30,6 +32,7 @@ const APP_SHELL = [
   './src/views/reconciliation.js',
   './src/views/historicalImport.js',
   './src/views/settings.js',
+  './src/views/statementImport.js',
 ];
 
 self.addEventListener('install', (event) => {

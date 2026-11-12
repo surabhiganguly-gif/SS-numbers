@@ -232,3 +232,37 @@ th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--bord
   padding: 1px 6px;
   margin-left: 6px;
 }
+
+/* ---- bank statement import ---- */
+.payee-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; cursor: pointer; }
+.payee-row .payee-select { width: 22px; height: 22px; margin: 0; flex: none; }
+.payee-main { flex: 1; min-width: 0; }
+.payee-main .hint { margin: 2px 0 0; }
+.chip {
+  flex: none;
+  max-width: 44%;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chip.needs { border-color: var(--danger); color: var(--danger); background: transparent; }
+.chip.suggested { border-style: dashed; }
+.chip.chosen { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
+.check-label { display: flex; align-items: flex-start; gap: 8px; color: var(--text); font-size: 0.85rem; margin-top: 12px; }
+.check-label input { width: auto; margin-top: 3px; }
+.stmt-dialog {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  padding: 16px;
+  width: min(92vw, 440px);
+}
+.stmt-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+.stmt-dialog h2 { margin-top: 0; }
+.dlg-lines { max-height: 38vh; overflow-y: auto; margin: 8px 0; font-size: 0.85rem; }
+.hint.error { color: var(--danger); }
+.hint.success { color: var(--success); }

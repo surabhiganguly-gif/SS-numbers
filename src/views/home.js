@@ -56,6 +56,7 @@ export function render(container) {
 
     <h2>Setup</h2>
     <div class="card">
+      <a href="#/import-statement">Import a bank statement →</a><br /><br />
       <a href="#/fixed-commitments">Manage fixed commitments →</a><br /><br />
       <a href="#/historical-import">Historical data import →</a>
     </div>

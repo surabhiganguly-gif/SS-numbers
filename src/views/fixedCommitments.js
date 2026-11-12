@@ -1,40 +1,8 @@
-import { list, addEntity } from '../state/store.js';
-import { STICKY_FIXED_CATEGORIES, FIXED_VALUE_CATEGORIES, FIXED_VALUE_DEFAULTS } from '../lib/categories.js';
+import { list, addEntity, ensureFixedCommitments } from '../state/store.js';
+import { STICKY_FIXED_CATEGORIES, FIXED_VALUE_CATEGORIES } from '../lib/categories.js';
 import { formatCurrency, currentMonthKey, effectiveValue } from '../lib/format.js';
 
 const ALL_NAMES = [...STICKY_FIXED_CATEGORIES, ...FIXED_VALUE_CATEGORIES];
-
-// The most recent past month with a logged amount for this category — used to
-// seed a sensible starting value instead of zero when nothing's been set yet.
-function lastActualForCategory(transactions, category, atMonthKey) {
-  const byMonth = {};
-  for (const t of transactions) {
-    if (t.category !== category) continue;
-    const mk = t.date.slice(0, 7);
-    if (mk >= atMonthKey) continue;
-    byMonth[mk] = (byMonth[mk] || 0) + t.amount;
-  }
-  const months = Object.keys(byMonth).sort();
-  return months.length ? byMonth[months[months.length - 1]] : 0;
-}
-
-async function getOrCreateCommitment(name, transactions) {
-  let c = list('fixedCommitment').find((c) => c.name === name);
-  if (!c) {
-    c = await addEntity('fixedCommitment', { name });
-    const defaultAmount = FIXED_VALUE_CATEGORIES.includes(name)
-      ? FIXED_VALUE_DEFAULTS[name]
-      : lastActualForCategory(transactions, name, currentMonthKey());
-    if (defaultAmount > 0) {
-      await addEntity('fixedCommitmentVersion', {
-        commitmentId: c.id,
-        amount: defaultAmount,
-        effectiveFrom: currentMonthKey(),
-      });
-    }
-  }
-  return c;
-}
 
 function versionsFor(commitmentId) {
   return list('fixedCommitmentVersion')
@@ -45,17 +13,14 @@ function versionsFor(commitmentId) {
 export function render(container) {
   container.innerHTML = `
     <h1>Fixed Commitments</h1>
-    <p class="hint">Rent, EMIs, SIP Savings, vehicle maintenance, and Miscellaneous each keep an effective-dated history — they carry forward last month's value automatically until you update one here. Updating doesn't change what past months' reports show.</p>
+    <p class="hint">Rent, EMIs, SIP Savings, Vehicle Maintenance, Miscellaneous, and Travel each keep an effective-dated history — they carry forward last month's value automatically until you update one here. Updating doesn't change what past months' reports show.</p>
     <p class="hint">Utilities, Hobbies, Staff/Ironing, and Land aren't managed here anymore — they're budgeted automatically off a running 3-month average.</p>
     <div id="commitments-list"></div>
   `;
   const listEl = container.querySelector('#commitments-list');
 
   async function ensureAllExist() {
-    const transactions = list('transaction');
-    for (const name of ALL_NAMES) {
-      await getOrCreateCommitment(name, transactions);
-    }
+    await ensureFixedCommitments();
   }
 
   function renderCommitments() {

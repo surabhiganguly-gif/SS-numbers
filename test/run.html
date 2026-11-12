@@ -10,6 +10,7 @@
   console.log = (...args) => { buffer += args.join(' ') + '\n'; origLog(...args); };
   console.error = (...args) => { buffer += args.join(' ') + '\n'; origErr(...args); };
   await import(`./budgeting.test.mjs?t=${Date.now()}`);
+  await import(`./statement.test.mjs?t=${Date.now()}`);
   out.textContent = buffer;
 </script>
 </body>
