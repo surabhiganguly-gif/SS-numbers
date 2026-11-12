@@ -81,8 +81,8 @@ export function render(container) {
   function renderStart(message, kind) {
     body.innerHTML = `
       <div class="card">
-        <p class="hint">Pick your bank statement (.xls or .csv). It's read on this phone and never uploaded. Lines are grouped by payee so you categorise each payee once; the result is saved as <strong>monthly category totals</strong>.</p>
-        <label>Statement file<input type="file" id="stmt-file" accept=".xls,.csv,.txt,application/vnd.ms-excel,text/csv" /></label>
+        <p class="hint">Pick your bank statement (.xls or .csv) — tap the box below and look in Downloads, or in Drive if that's where you saved it. You don't need to open the file first. It's read on this phone and never uploaded. Lines are grouped by payee so you categorise each payee once; the result is saved as <strong>monthly category totals</strong>.</p>
+        <label>Statement file<input type="file" id="stmt-file" /></label>
         <div class="actions"><button id="stmt-read" class="primary">Read statement</button></div>
         <div id="stmt-status" class="hint ${kind || ''}">${esc(message || '')}</div>
       </div>`;

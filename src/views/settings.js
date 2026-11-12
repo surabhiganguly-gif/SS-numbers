@@ -44,7 +44,7 @@ export function render(container) {
     </div>
 
     <div class="card">
-      <label>Backup file<input type="file" id="import-file" accept="application/json,.json" /></label>
+      <label>Backup file<input type="file" id="import-file" /></label>
       <label>Passphrase (only for backups exported with one)<input type="password" id="import-pass" autocomplete="off" /></label>
       <div class="actions"><button id="import-btn">Import backup</button></div>
       <div id="import-status" class="hint"></div>
